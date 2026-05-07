@@ -47,3 +47,11 @@ secrets/
 .huggingface/
 .hf_token
 .cache/
+
+# Personal / out-of-scope content
+# Files used locally but not part of the finpost project. .scratch/
+# is reserved for finpost workstream PRDs (see .scratch/README.md);
+# the entries below explicitly exclude ad-hoc subdirectories that
+# happen to live there but aren't workstreams.
+STUDY.md
+.scratch/hatch-pet/
