@@ -1,0 +1,49 @@
+# Python build / install artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Project bulk: never commit these to the repo
+data/                # raw filings, processed examples — large and reproducible
+results/             # checkpoints, eval outputs — large and reproducible
+checkpoints/         # alternate checkpoint location if used
+wandb/               # local Weights & Biases run logs
+
+# But DO keep the README.md inside data/ and results/ so the directories
+# survive a fresh clone with their purpose documented.
+!data/README.md
+!results/README.md
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — paranoia rule. Never commit anything matching these.
+# See SECURITY.md for the rationale and the rules they enforce.
+.env
+*.key
+*.pem
+secrets/
+
+# Hugging Face credential and cache directories. Tokens live in
+# ~/.cache/huggingface by default; the project-relative copies below
+# are belt-and-braces in case anyone accidentally copies one in.
+.huggingface/
+.hf_token
+.cache/

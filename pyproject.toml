@@ -1,0 +1,73 @@
+# Build system: hatchling is a small, modern PEP 517 build backend.
+# It reads this file and produces installable wheels.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Project metadata: PEP 621 standard fields. `pip install -e .` reads this.
+[project]
+name = "finpost"
+version = "0.0.1"
+description = "Post-training stack for financial-domain numerical reasoning, built as a learning project."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Shannan" }]
+
+# Core runtime dependencies. Loose upper bounds so a routine library bump
+# does not break installs; tight enough that a major version change does.
+dependencies = [
+    "torch>=2.5,<3",            # tensors, autograd, the actual training engine
+    "transformers>=4.50,<5",    # Gemma model, tokenizer, generation utilities
+    "datasets>=3.0,<4",         # GSM8K and MATH downloaders
+    "accelerate>=1.0,<2",       # device placement, mixed precision helpers
+    "numpy>=1.26,<3",           # array math used by graders and bootstraps
+    "scipy>=1.13,<2",           # bootstrap confidence intervals (scipy.stats)
+    "tqdm>=4.66,<5",            # progress bars during training and eval
+    "wandb>=0.18,<1",           # experiment tracking (loss curves, ablation tables)
+    "pyyaml>=6.0,<7",           # training config files; we import yaml directly so make it explicit
+]
+
+# Optional extras: install with e.g. `pip install -e ".[peft]"`.
+# Kept optional so the base install stays light and works on Windows
+# (bitsandbytes is fragile on Windows and unnecessary until Phase 2).
+[project.optional-dependencies]
+peft = [
+    "peft>=0.13,<1",            # Low-Rank Adaptation (LoRA) plumbing for Phase 2
+    "bitsandbytes>=0.44,<1",    # 4-bit quantization for QLoRA; install on Linux/A100 box
+]
+dpo-reference = [
+    "trl>=0.12,<1",             # used ONLY as a numerical reference for our DPO loss
+]
+edgar = [
+    "edgartools>=2.0",          # SEC filing downloader and parser, for Phase 2
+]
+dev = [
+    "pytest>=8.0,<9",           # test runner
+    "pytest-cov>=5.0,<6",       # coverage reports
+    "ruff>=0.6,<1",             # linter and formatter (single tool, very fast)
+]
+
+# Tells hatchling that the package source lives under src/finpost.
+# This is the "src layout" — keeps the import path independent of the cwd
+# and avoids a class of "accidentally importing from the working dir" bugs.
+[tool.hatch.build.targets.wheel]
+packages = ["src/finpost"]
+
+# Ruff config — formatting and lint rules. Kept minimal for now;
+# we can extend rule selection as the codebase grows.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E,F = pycodestyle errors + pyflakes (the basics)
+# I   = isort (import ordering)
+# UP  = pyupgrade (modern syntax)
+# B   = bugbear (common bug patterns)
+select = ["E", "F", "I", "UP", "B"]
+
+# Pytest config: tests live in tests/, importable via the src layout.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
