@@ -52,6 +52,7 @@ from finpost.training.checkpoint import (
 )
 from finpost.training.config import Config
 from finpost.training.dataset import make_loaders
+from finpost.training.masking import IGNORE_INDEX
 from finpost.training.optim import build_lr_scheduler, build_optimizer
 from finpost.training.sft import compute_masked_ce_loss
 
@@ -337,16 +338,16 @@ class Trainer:
                 loader_iter = iter(self.train_loader)
                 batch = next(loader_iter)
 
-            # Forward + masked CE loss in fp32. ``compute_masked_ce_loss``
-            # returns whatever dtype the logits were; cast to float32
-            # before accumulating so summing across micro-batches doesn't
-            # quietly lose precision in bf16.
+            # Forward + masked CE loss. ``compute_masked_ce_loss`` returns
+            # whatever dtype the model uses; we cast to fp32 during
+            # accumulation below (see ``loss.detach().float()`` a few lines
+            # down) so precision isn't lost across micro-batches in bf16.
             loss = self._forward_loss(batch)
 
             # Useful tokens = response positions = labels != IGNORE_INDEX.
             # We count them on CPU because the labels are already there
             # and this avoids a host/device sync inside the hot loop.
-            useful_tokens = int((batch["labels"] != -100).sum().item())
+            useful_tokens = int((batch["labels"] != IGNORE_INDEX).sum().item())
             window_tokens += useful_tokens
 
             # Scaled backward: dividing by grad_accum makes the
