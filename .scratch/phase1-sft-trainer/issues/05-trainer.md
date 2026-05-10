@@ -9,6 +9,8 @@
 
 The actual SFT training loop. Wires together the dataset, the optimizer, the scheduler, the checkpointer, the masked CE loss, and Weights & Biases. After this issue lands, a single `Trainer(config).train()` call runs an end-to-end SFT job.
 
+The first successful run target is `sshleifer/tiny-gpt2` on CPU. Qwen 0.5B is the second target, after the TinyGPT path proves loss measurement, tracking, checkpointing, and resume.
+
 ## Scope
 
 **In scope:**
@@ -51,6 +53,7 @@ tests/test_trainer.py
 3. **Resume continuity:** train 20 steps end-to-end, capture loss at each step (run A). Train 10 steps, save checkpoint, fresh process, resume, train 10 more (run B). The 11th-through-20th-step losses match within `atol=1e-5`.
 4. **wandb logging:** run B's wandb dashboard contains `train/loss`, `train/lr`, `train/grad_norm`, `val/loss` (verified by checking the wandb run record after the test).
 5. **Gradient accumulation correctness:** running with `grad_accum_steps=4` and effective batch=32 produces ~equivalent loss curve to `grad_accum_steps=1` and per-device-batch=32 (within `atol=1e-3` due to cross-batch numerical noise).
+6. **Local soft launch:** a 20-step `sshleifer/tiny-gpt2` run emits loss metrics, validation loss, checkpoint path, resume metadata, and offline tracking artifacts without requiring GPU or network during the run.
 
 ## Notes
 

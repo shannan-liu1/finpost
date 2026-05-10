@@ -20,8 +20,9 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
   - Eval and analysis: `numpy`, `scipy` (for bootstrapping)
   - Tracking: Weights & Biases (`wandb`)
 - [ ] Hardware verification
-  - Confirm A100 access (40 GB or 80 GB? `[OPEN]` — affects context budget)
-  - Smoke test: load Gemma 3 1B, generate 100 tokens, measure tokens/sec
+  - Local canary: load `sshleifer/tiny-gpt2` on CPU and run a 20-step trainer soft launch within a 4 GB RAM budget.
+  - Target-environment soft launch: load `Qwen/Qwen2.5-0.5B`, run 20 SFT steps, and measure tokens/sec.
+  - Larger remote hardware is optional until the TinyGPT canary and Qwen 20-step soft launch both pass.
 - [ ] API keys and budgets
   - Hugging Face token (model download)
   - Anthropic and/or OpenAI key (for teacher distillation in Phase 2)
@@ -31,7 +32,16 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
 
 ## Phase 1 — Math post-training stack (≈2–3 weeks)
 
-**Goal:** end-to-end Supervised Fine-Tuning (SFT) and Direct Preference Optimization (DPO) stack with full ablations on free-grader benchmarks. Base model is Gemma 3 1B with full fine-tuning (no LoRA in this phase).
+**Goal:** end-to-end Supervised Fine-Tuning (SFT) and Direct Preference Optimization (DPO) stack with full ablations on free-grader benchmarks. Base model is `Qwen/Qwen2.5-0.5B` with full fine-tuning (no LoRA in this phase). `Qwen/Qwen2.5-0.5B-Instruct` is a reference baseline only.
+
+**Execution ladder:** keep the implementation cheap until the substrate is proven.
+
+1. Finish the production SFT trainer infrastructure: dataset wrapping, packing collator, optimizer/scheduler factories, checkpointing, trainer loop, CLI, and configs.
+2. Run `sshleifer/tiny-gpt2` as the 4 GB local infrastructure canary. It is not a research model; it exists to prove loss measurement, validation loss, tracking, checkpointing, and resume.
+3. Run `Qwen/Qwen2.5-0.5B` for a 20-step SFT soft launch through the same production path.
+4. Run the first Qwen 0.5B SFT baseline only after both soft launches pass.
+5. Apply DPO after a real SFT checkpoint exists, then compare pure SFT vs. SFT + DPO on the same evaluation set.
+6. Start the 10-K / filing-data work only after Phase 1 tells us whether DPO adds value over SFT.
 
 ### 1.1 Data preparation
 
@@ -51,11 +61,12 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
 ### 1.2 Supervised Fine-Tuning trainer
 
 - [ ] Implement masked cross-entropy loss in a thin training loop:
-  - Apply Gemma's chat template
+  - Apply a configurable prompt/response serialization; default to a Qwen-compatible format for Phase 1
   - Mask the prompt tokens (loss only on the response)
   - Mixed-precision (bf16), gradient accumulation, cosine learning-rate schedule
-- [ ] First sanity run: 100 steps on a small subset; confirm loss decreases monotonically.
-- [ ] Full first SFT run on combined GSM8K + MATH at one set of hyperparameters.
+- [ ] TinyGPT local canary: 20 steps with `sshleifer/tiny-gpt2` on CPU; confirm loss is logged, validation loss runs, checkpointing works, and resume works.
+- [ ] Qwen 0.5B soft launch: 20 steps with `Qwen/Qwen2.5-0.5B` in the target environment; confirm the real model connects to the same trainer path.
+- [ ] Full first Qwen 0.5B SFT run on combined GSM8K + MATH at one set of hyperparameters.
 - [ ] Evaluate Base vs. SFT on test sets (see 1.5).
 
 `[DECIDED 2026-05-05]` Decision Q-A: **write our own minimal trainers from scratch** for both Supervised Fine-Tuning and Direct Preference Optimization (~300–500 lines each). Justification: the project goal is depth on the mechanics, and the trainer is where the substrate of post-training (masking, gradient accumulation, optimizer dynamics, mixed-precision casts) lives. Use TRL only as a reference for numerical sanity-checking the Direct Preference Optimization loss.
@@ -67,7 +78,7 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
   - Learning rate: 1e-5, 5e-5, 1e-4
   - Epochs: 1, 3
 - [ ] Each cell: train, evaluate, log to Weights & Biases.
-- [ ] Realistic budget: ~9–12 cells on a single A100 over a week.
+- [ ] Realistic budget: ~9–12 cells after the target environment is selected from soft-launch evidence.
 
 ### 1.4 Direct Preference Optimization preparation
 
@@ -104,15 +115,37 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
 
 ### 1.7 Phase 1 deliverable
 
+- [ ] TinyGPT local canary report: loss curve, validation loss, offline tracking artifact path, checkpoint path, and resume check.
+- [ ] Qwen 0.5B SFT soft-launch report: 20-step loss/tracking/checkpoint artifact paths.
 - [ ] Three checkpoints saved and versioned: Base, SFT-best, SFT+DPO-best.
 - [ ] Ablation tables with confidence intervals.
 - [ ] A short writeup (one page) documenting what worked, what didn't.
+
+### 1.8 Deferred reinforcement-learning research track
+
+Group Relative Policy Optimization (GRPO) is in scope for post-training, but out of scope for the current Phase 1 trainer. It becomes a separate workstream after the SFT and DPO path is implemented and evaluated.
+
+Reason: GRPO changes the training loop from fixed examples or fixed preference pairs into online sampling plus reward scoring. That requires:
+
+- multiple sampled completions per prompt,
+- a reward contract for answer correctness, citation faithfulness, and computation correctness,
+- reward normalization within each prompt group,
+- KL control against a reference model,
+- stronger defenses against reward hacking.
+
+The current pedagogical order is:
+
+1. Build SFT first to learn masking, packing, loss, checkpointing, and basic training dynamics.
+2. Add DPO next to learn preference-pair optimization without running an online reinforcement-learning loop.
+3. Add GRPO later, only after the verifier and evaluation harness are strong enough to support reward-driven training.
 
 ---
 
 ## Phase 2 — Financial domain transfer (≈3–4 weeks)
 
 **Goal:** port the stack to numerical reasoning over real EDGAR filing sections. Switch from full fine-tuning to QLoRA at long context. Use teacher-model distillation with programmatic verification for data.
+
+Phase 2 begins with a dataset decision, not training. First survey open-source financial QA / 10-K resources, then decide whether the finance corpus is existing-dataset-only, teacher-generated, or hybrid. Teacher generation and LLM-as-judge work must stay behind verifier and leakage gates.
 
 ### 2.1 Corpus acquisition
 
@@ -238,7 +271,7 @@ Source ({ticker} {form} period ending {period_end}, section {section_id}):
 ### 2.8 Training setup
 
 - [ ] QLoRA configuration:
-  - Base: Gemma 3 1B in 4-bit NF4 via `bitsandbytes`
+  - Base: start with `Qwen/Qwen2.5-0.5B` in 4-bit NF4 via `bitsandbytes`; scale only if Phase 1 evidence justifies it
   - Adapters: LoRA rank 16, alpha 32, dropout 0.05
   - Target modules: attention projections (q, k, v, o) and MLP gates (gate, up, down)
   - Optimizer: paged AdamW 8-bit
@@ -249,7 +282,7 @@ Source ({ticker} {form} period ending {period_end}, section {section_id}):
 
 Identical Phase 2 finance training data and hyperparameters across arms; the only thing that varies is the **starting checkpoint**.
 
-- [ ] **Arm A — Base + few-shot.** No training. Evaluate Gemma 3 1B (instruction-tuned) on the finance test set with 3 few-shot examples in the prompt.
+- [ ] **Arm A — Base + few-shot.** No training. Evaluate the Qwen 0.5B baseline on the finance test set with 3 few-shot examples in the prompt.
 - [ ] **Arm B — Base → finance.** Apply finance SFT + DPO starting from the base instruction-tuned model.
 - [ ] **Arm C — Base → math → finance.** Apply finance SFT + DPO starting from the Phase 1 SFT+DPO-best checkpoint.
 
@@ -280,6 +313,8 @@ Identical Phase 2 finance training data and hyperparameters across arms; the onl
 | ID | Decision | Where it lives in the plan |
 |----|----------|---------------------------|
 | ~~Q-A~~ | ~~Write our own SFT trainer or use Hugging Face `Trainer`~~ → **DECIDED**: write our own from scratch (2026-05-05) | 1.2 |
+| ~~Q-G~~ | ~~Gemma 1B or Qwen 0.5B for Phase 1 base experimentation~~ -> **DECIDED**: use `Qwen/Qwen2.5-0.5B` as the canonical base model; keep the instruct model only as a baseline (2026-05-08, ADR-0001) | 1.2 |
+| ~~Q-H~~ | ~~What model validates the trainer on a 4 GB local machine before Qwen~~ -> **DECIDED**: use `sshleifer/tiny-gpt2` as an infrastructure canary; optionally use `distilgpt2` as a heavier CPU sanity check, but do not make it a gate (2026-05-09) | 1.2 |
 | Q-B | How to handle DPO prompts with all-correct or all-incorrect SFT samples | 1.4 |
 | Q-C | Test-set sample size for statistical power on ~5-percentage-point gains | 1.6 |
 | Q-D | Exact company list for the Phase 2 corpus | 2.1 |

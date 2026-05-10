@@ -26,7 +26,7 @@ from finpost.training.config import (
 def _minimal_valid_config() -> Config:
     """The smallest Config that validates: required fields only, defaults elsewhere."""
     return Config(
-        model=ModelConfig(base_model_id="google/gemma-3-1b-it"),
+        model=ModelConfig(base_model_id="Qwen/Qwen2.5-0.5B"),
         data=DataConfig(sources=["gsm8k", "math"]),
         training=TrainingConfig(max_steps=1000, lr=2.0e-5),
     )
@@ -40,7 +40,7 @@ def _minimal_valid_config() -> Config:
 def test_minimal_config_constructs_with_defaults_filled_in() -> None:
     cfg = _minimal_valid_config()
     # Required fields present
-    assert cfg.model.base_model_id == "google/gemma-3-1b-it"
+    assert cfg.model.base_model_id == "Qwen/Qwen2.5-0.5B"
     assert cfg.data.sources == ["gsm8k", "math"]
     assert cfg.training.max_steps == 1000
     assert cfg.training.lr == 2.0e-5
@@ -75,7 +75,7 @@ def test_yaml_round_trip(tmp_path: Path) -> None:
 def test_yaml_round_trip_preserves_overrides(tmp_path: Path) -> None:
     """Non-default values survive a YAML round-trip."""
     cfg = Config(
-        model=ModelConfig(base_model_id="google/gemma-3-1b-pt", dtype="float32"),
+        model=ModelConfig(base_model_id="Qwen/Qwen2.5-0.5B-Instruct", dtype="float32"),
         data=DataConfig(sources=["math"], val_split_pct=10.0, seed=7),
         training=TrainingConfig(
             max_steps=2000,

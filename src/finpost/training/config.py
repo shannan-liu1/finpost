@@ -53,7 +53,7 @@ class ModelConfig(BaseModel):
     base_model_id: str = Field(
         ...,
         min_length=1,
-        description="Hugging Face model identifier (e.g. 'google/gemma-3-1b-it').",
+        description="Hugging Face model identifier (e.g. 'Qwen/Qwen2.5-0.5B').",
     )
     dtype: DType = Field(
         default="bfloat16",
@@ -61,7 +61,7 @@ class ModelConfig(BaseModel):
     )
     use_safetensors: bool = Field(
         default=True,
-        description="Refuse pickle weights; required by SECURITY.md for the real Gemma model.",
+        description="Refuse pickle weights; required by SECURITY.md for the real Phase 1 model.",
     )
 
 

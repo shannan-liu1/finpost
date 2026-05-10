@@ -64,3 +64,9 @@ tests/
 - Real Gemma 3 1B requires Hugging Face authentication and a meaningful download (~2 GB). The `--tiny-model` flag is the path that runs locally without that download.
 - For CPU runs, mixed precision is a no-op. The smoke script should `--dtype` flag for explicit control; default to `float32` on CPU and `bfloat16` on CUDA.
 - This PRD intentionally does *not* wire up an optimizer scheduler or gradient accumulation; those are mechanical additions handled in a later PRD when we run the real ablation matrix.
+
+## Amendment 1 - 2026-05-09
+
+This completed skeleton PRD is now historical. The current Phase 1 model decision is ADR-0001: `Qwen/Qwen2.5-0.5B` for the real SFT/DPO substrate, and `sshleifer/tiny-gpt2` for the local infrastructure canary.
+
+Do not carry forward the old Gemma-specific smoke-script assumptions into the production trainer. The production path is defined by `.scratch/phase1-sft-trainer/PRD.md` and should use configurable prompt/response serialization.

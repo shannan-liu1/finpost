@@ -33,3 +33,21 @@ The task of returning a single figure that appears verbatim in a filing excerpt.
 
 ### Numerical reasoning
 The task of computing a derived quantity from one or more figures present in a filing excerpt. Requires both correct selection of input line items and correct arithmetic.
+
+### Post-training
+Training performed after pretraining to make a base language model more useful for a target behavior. In this project, post-training includes supervised fine-tuning, Direct Preference Optimization, and later reinforcement-learning methods such as Group Relative Policy Optimization.
+
+### Supervised Fine-Tuning
+A post-training method that updates a model on prompt-response examples. The model is taught to imitate the provided response tokens, usually with loss applied only to the assistant response and not to the prompt. Abbreviated SFT after first use.
+
+### Direct Preference Optimization
+A post-training method that updates a model from pairs of responses to the same prompt: one preferred response and one non-preferred response. It is used when the target behavior is easier to express as "response A is better than response B" than as one exact gold answer. Abbreviated DPO after first use.
+
+### Group Relative Policy Optimization
+A reinforcement-learning post-training method that samples multiple responses for the same prompt, scores each response with a reward function, and updates the policy based on each response's relative standing within the group. Abbreviated GRPO after first use.
+
+### Teacher distillation
+Using a larger or stronger model to produce training examples, labels, rationales, preference pairs, or grading signals for a smaller student model. In this project, teacher distillation is a data-generation technique, not a guarantee that the teacher output is true.
+
+### LLM as judge
+Using a language model to evaluate or compare generated answers. In this project, LLM-as-judge can help score faithfulness, citation quality, and answerability, but numerical answers and computations still require programmatic verification.

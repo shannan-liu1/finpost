@@ -1,6 +1,6 @@
 """Tests for the pure-function helpers in finpost.data.cli.
 
-The end-to-end CLI run requires the Gemma tokenizer download and is
+The end-to-end CLI run requires the Qwen tokenizer download and is
 verified through manual invocation. These tests cover the statistics
 computation and formatting in isolation, with no network or tokenizer
 dependency.

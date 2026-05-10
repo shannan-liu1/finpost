@@ -1,7 +1,7 @@
 """Command-line interface for inspecting Phase 1 datasets.
 
-Loads a dataset (GSM8K or MATH), tokenizes the records with the Gemma
-3 1B tokenizer, prints summary length statistics and a sample example.
+Loads a dataset (GSM8K or MATH), tokenizes the records with the Phase 1
+Qwen 0.5B tokenizer, prints summary length statistics and a sample example.
 Useful for sanity-checking that the loaders work end-to-end and for
 deciding context-length budgets before training.
 
@@ -25,7 +25,7 @@ from finpost.data.schema import Example
 
 # Default tokenizer — the canonical Phase 1 training base. Overridable
 # via --tokenizer at the command line.
-_DEFAULT_TOKENIZER = "google/gemma-3-1b-it"
+_DEFAULT_TOKENIZER = "Qwen/Qwen2.5-0.5B"
 
 # How many examples to tokenize at once. Tokenization is fast; the
 # only reason to batch at all is to amortize Python overhead. 64 is a

@@ -68,3 +68,7 @@ Anything we know but haven't resolved. Not load-bearing — just memory.
 | [`phase1-data-loading`](./phase1-data-loading/PRD.md) | Phase 1 data loading (GSM8K, MATH) | Done |
 | [`sft-trainer-skeleton`](./sft-trainer-skeleton/PRD.md) | Supervised Fine-Tuning trainer skeleton | Done |
 | [`phase1-sft-trainer`](./phase1-sft-trainer/PRD.md) | Phase 1 production SFT trainer on GSM8K + MATH | In Progress (drafting) |
+| [`phase1-training-runbook`](./phase1-training-runbook/PRD.md) | Phase 1 command-by-command training runbook and execution issues | In Progress |
+| [`phase1-dpo-comparison`](./phase1-dpo-comparison/PRD.md) | Phase 1 DPO trainer and SFT comparison | Not Started |
+| [`phase1-grpo-research`](./phase1-grpo-research/PRD.md) | GRPO research track for verifiable numerical reasoning | Not Started |
+| [`phase2-filing-distillation-dataset`](./phase2-filing-distillation-dataset/PRD.md) | Phase 2 filing distillation dataset | Not Started |

@@ -10,8 +10,7 @@ The point is to verify three things end-to-end:
 
 By default uses ``sshleifer/tiny-gpt2`` (~1MB, no auth required) so
 the smoke test runs in seconds on CPU. Pass ``--no-tiny-model`` to
-swap in the real Gemma 3 1B base (requires Hugging Face auth and the
-Gemma license accepted on your account).
+swap in the Phase 1 Qwen 0.5B base model.
 
 Usage:
     python scripts/sft_smoke.py --tiny-model --device cpu
@@ -31,15 +30,16 @@ from finpost.training.sft import train_step
 # suite. Exists specifically so smoke tests like this one have a
 # downloadable, license-free CausalLM to load on CPU in seconds.
 _TINY_MODEL = "sshleifer/tiny-gpt2"
-_REAL_MODEL = "google/gemma-3-1b-it"
+_REAL_MODEL = "Qwen/Qwen2.5-0.5B"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="SFT trainer smoke test.")
     parser.add_argument(
         "--tiny-model",
-        action="store_true",
-        help=f"Use {_TINY_MODEL} (~1MB, no auth). Default is {_REAL_MODEL}.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=f"Use {_TINY_MODEL} (~1MB, no auth). Pass --no-tiny-model for {_REAL_MODEL}.",
     )
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument(
@@ -73,7 +73,7 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # For the real Gemma model, enforce safetensors per SECURITY.md.
+    # For the real Phase 1 model, enforce safetensors per SECURITY.md.
     # Older toy models (sshleifer/tiny-gpt2) ship as .bin and don't
     # have safetensors weights — don't enforce there or the load fails.
     load_kwargs = {"dtype": dtype}

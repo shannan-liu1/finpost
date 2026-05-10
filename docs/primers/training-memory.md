@@ -9,7 +9,7 @@ This primer covers four interlocking topics:
 3. **Activation memory** — the part that scales with batch size and sequence length.
 4. **The unlocks** — FlashAttention (free), gradient checkpointing (cheap), 8-bit optimizers, LoRA, QLoRA.
 
-Worked example throughout: Gemma 3 1B, mixed-precision training (bf16 forward, fp32 master copy), AdamW.
+Worked example throughout: Qwen2.5 0.5B, mixed-precision training (bf16 forward, fp32 master copy), AdamW.
 
 ---
 
@@ -26,7 +26,7 @@ Full fine-tuning under mixed precision keeps **five distinct tensors per paramet
 | **AdamW second moment (v)** | fp32 | 4 | Running average of past squared gradients. See section 2. |
 | **Total** | | **16 bytes per parameter** | |
 
-For 1 billion parameters: **16 GB of memory**, *before* you have processed a single training example.
+For 0.5 billion parameters: **8 GB of memory**, *before* you have processed a single training example.
 
 ### Why fp32 for the master weight and the optimizer state
 
@@ -99,7 +99,7 @@ They are the same concept under two different names. AdamW uses the statistical 
 - v: 4 bytes per parameter
 - **Total: 8 bytes per parameter for AdamW state.**
 
-For 1 billion parameters: **8 GB** of optimizer state. Notice this is **larger than the bf16 model itself** (which is 2 GB). The optimizer's bookkeeping is the dominant memory cost of training.
+For 0.5 billion parameters: **4 GB** of optimizer state. Notice this is **larger than the bf16 model itself** (which is about 1 GB). The optimizer's bookkeeping is the dominant memory cost of training.
 
 This is the single most important number to internalize. **The optimizer state, not the model, is what makes training expensive.**
 
@@ -127,26 +127,26 @@ For a single transformer layer at sequence length `L`, batch size `B`, hidden di
 
 In bf16, each float is 2 bytes. Roughly: ~10 × B × L × H bytes per layer (very approximate).
 
-### Worked estimate for Gemma 3 1B
+### Worked estimate for Qwen2.5 0.5B
 
-[NEEDS VERIFICATION on Gemma 3 1B's exact architecture; rough numbers below]
+[NEEDS VERIFICATION on the exact installed checkpoint; rough numbers below]
 
-Assume: 26 layers, hidden_dim ≈ 1500, intermediate_dim ≈ 6000.
+The public Qwen2.5 0.5B config lists 24 layers, hidden size 896, intermediate size 4864, 14 attention heads, 2 key/value heads, and 32K maximum position embeddings.
 
 Per layer at batch=1, seq=4096:
-- Hidden-dim activations: ~10 × 1 × 4096 × 1500 × 2 bytes = ~120 MB
+- Hidden-dim activations: ~10 x 1 x 4096 x 896 x 2 bytes = ~73 MB
 - (For comparison: attention scores without FlashAttention would add 1 × 32 heads × 4096² × 2 bytes ≈ 1 GB *per layer*. This is why FlashAttention isn't optional.)
 
-Across 26 layers: ~3 GB of activations at batch=1, seq=4096.
+Across 24 layers: ~1.8 GB of activations at batch=1, seq=4096.
 
 Scales linearly with batch size and sequence length:
-- Batch 8, seq 4096: ~24 GB
-- Batch 1, seq 16384: ~12 GB
-- Batch 8, seq 16384: ~96 GB (well over an A100 80GB)
+- Batch 8, seq 4096: ~14 GB
+- Batch 1, seq 16384: ~7 GB
+- Batch 8, seq 16384: ~56 GB
 
 ### Why FlashAttention is mandatory
 
-Vanilla attention computes Q·Kᵀ first, then softmax, then multiplies by V. The intermediate Q·Kᵀ is shape `[B, heads, L, L]` — quadratic in sequence length. At L = 4096 with 32 heads at batch 1: 1 GB per layer. Across 26 layers: 26 GB just for one attention matrix per layer per example.
+Vanilla attention computes QK^T first, then softmax, then multiplies by V. The intermediate QK^T is shape `[B, heads, L, L]` - quadratic in sequence length. At L = 4096 with 14 heads at batch 1: roughly 470 MB per layer. Across 24 layers: roughly 11 GB just for one attention matrix per layer per example.
 
 FlashAttention restructures the computation:
 
@@ -171,22 +171,22 @@ Use it when memory is the constraint. Skip it when you have headroom.
 
 ## 4. The full picture — putting numbers on it
 
-Full fine-tune of Gemma 3 1B, mixed precision, AdamW, FlashAttention, no gradient checkpointing:
+Full fine-tune of Qwen2.5 0.5B, mixed precision, AdamW, FlashAttention, no gradient checkpointing:
 
-| Component | Per-parameter cost | For 1B params | Notes |
+| Component | Per-parameter cost | For 0.5B params | Notes |
 |-----------|-------------------|---------------|-------|
-| bf16 weights | 2 B | 2 GB | |
-| fp32 master weights | 4 B | 4 GB | |
-| bf16 gradients | 2 B | 2 GB | |
-| AdamW first moment (fp32) | 4 B | 4 GB | |
-| AdamW second moment (fp32) | 4 B | 4 GB | |
-| **Static training memory** | **16 B** | **16 GB** | |
-| Activations, batch=1, seq=4K | — | ~3 GB | scales linearly with B and L |
-| Activations, batch=8, seq=4K | — | ~24 GB | |
+| bf16 weights | 2 B | 1 GB | |
+| fp32 master weights | 4 B | 2 GB | |
+| bf16 gradients | 2 B | 1 GB | |
+| AdamW first moment (fp32) | 4 B | 2 GB | |
+| AdamW second moment (fp32) | 4 B | 2 GB | |
+| **Static training memory** | **16 B** | **8 GB** | |
+| Activations, batch=1, seq=4K | approx | ~1.8 GB | scales linearly with B and L |
+| Activations, batch=8, seq=4K | approx | ~14 GB | |
 | Workspace, fragmentation | — | ~3 GB | rough overhead |
-| **Total at batch=8, seq=4K** | | **~43 GB** | tight on A100 40GB, fine on 80GB |
+| **Total at batch=8, seq=4K** | | **~25 GB** | plausible on cheaper cloud GPUs, still not a 4 GB laptop job |
 
-The pattern: **the constant cost (params + grads + optimizer = 16 GB) is roughly equal to the variable cost (activations) at moderate batch sizes.** Both matter. Either one alone fits on a smaller GPU; together they push you to A100-class hardware.
+The pattern: **the constant cost (params + grads + optimizer = 8 GB) is the floor, and activation memory still dominates as batch size and sequence length rise.** Both matter. Qwen 0.5B lowers the cost enough for cheaper experiments, but not enough for a 4 GB laptop full fine-tune.
 
 ---
 
@@ -196,9 +196,9 @@ The pattern: **the constant cost (params + grads + optimizer = 16 GB) is roughly
 
 Replace the full-rank update `ΔW` to a weight matrix `W` with a low-rank product `B · A`, where `A` and `B` are small matrices (rank `r` ≪ original dimensions). Train only `A` and `B`; freeze `W`.
 
-For a typical setup, the trainable parameter count drops from 1 billion to ~10 million (0.1–1%, depending on rank and which layers get adapters).
+For a typical setup, the trainable parameter count drops from 0.5 billion to a few million (roughly 0.1-1%, depending on rank and which layers get adapters).
 
-**Memory savings:** the 12 bytes per parameter that would have gone to gradients + AdamW state + fp32 master copy ONLY apply to the trainable adapter parameters. The 988 million frozen parameters store only their bf16 weight (no gradient, no optimizer state). Roughly: optimizer-related memory drops by ~99% for these layers.
+**Memory savings:** the 12 bytes per parameter that would have gone to gradients + AdamW state + fp32 master copy ONLY apply to the trainable adapter parameters. The frozen base parameters store only their bf16 weight (no gradient, no optimizer state). Roughly: optimizer-related memory drops by ~99% for these layers.
 
 **What you give up:** the update is constrained to a low-rank subspace. Empirically near-equivalent to full fine-tuning for most tasks; in some cases produces measurably worse results, especially at very small rank or for tasks that require broad capability shifts. For Direct Preference Optimization specifically, LoRA can be subtly tricky — see Phase 2 notes in the project plan.
 
@@ -206,22 +206,22 @@ For a typical setup, the trainable parameter count drops from 1 billion to ~10 m
 
 Stack three things:
 
-1. **Base model in 4-bit** (NF4 format from bitsandbytes). The 988 million frozen parameters now use 0.5 bytes each instead of 2 bytes, dropping base model memory from 2 GB to 0.5 GB.
+1. **Base model in 4-bit** (NF4 format from bitsandbytes). The frozen parameters now use 0.5 bytes each instead of 2 bytes, dropping base model memory from about 1 GB to about 0.25 GB.
 2. **LoRA adapters in bf16.** As above.
 3. **8-bit AdamW for the adapters.** Optimizer state for the adapters drops by 4× on top of the LoRA savings.
 
 How the math works during forward pass: the 4-bit base weights are dequantized to bf16 *on the fly* per matrix multiplication, used in compute, then thrown away. The dequantized version never persists in memory. The trick is that dequantization is fast (specialized kernels) and the bandwidth saved is enormous.
 
-**Memory budget for Gemma 3 1B with rank-16 QLoRA on attention + MLP:**
+**Memory budget for Qwen2.5 0.5B with rank-16 QLoRA on attention + MLP:**
 
-- Base model in 4-bit: ~0.5 GB
+- Base model in 4-bit: ~0.25 GB
 - LoRA adapter weights (bf16): ~20 MB
 - LoRA gradients (bf16): ~20 MB
 - LoRA fp32 master: ~40 MB
 - LoRA AdamW state in 8-bit: ~20 MB
-- **Static training memory: ~600 MB**
-- Activations at batch=1, seq=8K: ~5 GB (still need full activations through all layers — the base being quantized doesn't reduce the activation count)
-- **Total: ~6 GB at batch=1, seq=8K**
+- **Static training memory: ~350 MB**
+- Activations at batch=1, seq=8K: ~3.5 GB (still need full activations through all layers - the base being quantized does not reduce the activation count)
+- **Total: ~4 GB at batch=1, seq=8K**
 
 This fits comfortably on a 24 GB consumer card, with substantial headroom for longer context or larger batch.
 

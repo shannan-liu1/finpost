@@ -96,3 +96,9 @@ Resolved the open issue from Amendment 1 plus discovered and addressed two addit
 4. ✓ MATH test CLI run prints count, length stats.
 5. ✓ `pytest tests/test_data_schema.py -v` passes (along with all other test files).
 6. ✓ Every returned record has non-empty fields (Pydantic enforces this; loader skips records that would violate it, with logged counts).
+
+## Amendment 3 - 2026-05-09
+
+The original scope mentioned Gemma token-length statistics because Gemma was the initial Phase 1 base model. ADR-0001 supersedes that model choice. Current and future length stats for Phase 1 should use `Qwen/Qwen2.5-0.5B` unless an issue explicitly requests a different tokenizer comparison.
+
+This does not change the loader contract: loaders still return normalized text examples, and training-time tokenization remains owned by the SFT trainer workstream.
