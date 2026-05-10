@@ -7,6 +7,20 @@ For the executable plan with phase breakdown and open decisions, see [`PLAN.md`]
 For specific workstreams, see [`.scratch/`](./.scratch/).
 For supply-chain posture and security policy, see [`SECURITY.md`](./SECURITY.md).
 
+## Run a training job
+
+The Phase 1 Supervised Fine-Tuning trainer is wired behind one entry point: `python -m finpost.training.train --config <path>`. For a fast local sanity check that exercises every piece of the production path on CPU (tiny-gpt2, real GSM8K + MATH data, packing collator, validation, checkpointing), run the canary config:
+
+```bash
+# PowerShell:
+$env:WANDB_MODE = "offline"
+.venv/Scripts/python.exe -m finpost.training.train --config experiments/local_tiny_gpt2.yaml --device cpu
+# Bash:
+WANDB_MODE=offline python -m finpost.training.train --config experiments/local_tiny_gpt2.yaml --device cpu
+```
+
+The reference Phase 1 baseline runs Qwen2.5-0.5B on combined GSM8K + MATH and is meant for a GPU target environment (e.g. Colab A100). Launch the full run with `python -m finpost.training.train --config experiments/baseline.yaml`, or do a 20-step soft launch first with `--max-steps 20` to verify the wire-up before committing to the full schedule. CLI flags (`--max-steps`, `--resume-from`, `--device`) win over the YAML's values; everything else lives in the config file. See [`experiments/`](./experiments/) for the full set of configs.
+
 ## Install
 
 This project targets Python 3.11 or newer.
