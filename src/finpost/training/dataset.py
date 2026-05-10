@@ -277,13 +277,24 @@ class PackingCollator:
         )
 
     def _isolated_attention_mask(self, rows: list[dict[str, Any]], width: int) -> torch.Tensor:
+        # Causal lower-triangular: 1 on and below the diagonal, 0 above.
+        # When the model accepts a 4D attention_mask, it treats it as the
+        # COMPLETE mask — no further causal masking is applied internally.
+        # We therefore have to bake the causal direction in here, otherwise
+        # a query token could attend to future positions inside its own
+        # document and break the language-modeling objective.
+        causal = torch.tril(torch.ones((width, width), dtype=torch.long))
         masks: list[torch.Tensor] = []
         for row in rows:
             doc_ids = row["doc_ids"] + [-2] * (width - len(row["doc_ids"]))
             doc_tensor = torch.tensor(doc_ids, dtype=torch.long)
-            same_document = doc_tensor.unsqueeze(0) == doc_tensor.unsqueeze(1)
-            real_document = doc_tensor.unsqueeze(0) >= 0
-            mask = (same_document & real_document).long()
+            # Position i can attend to position j only when:
+            #   1. they belong to the SAME document  (no cross-doc leakage)
+            #   2. that document is REAL (not padding/separator, doc_id >= 0)
+            #   3. j <= i (causal direction — no future leakage)
+            same_document = (doc_tensor.unsqueeze(0) == doc_tensor.unsqueeze(1)).long()
+            real_document = (doc_tensor.unsqueeze(0) >= 0).long()
+            mask = same_document * real_document * causal
             masks.append(mask)
         return torch.stack(masks, dim=0).unsqueeze(1)
 

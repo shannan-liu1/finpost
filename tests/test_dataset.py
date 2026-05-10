@@ -121,7 +121,7 @@ def test_collator_packs_rows_masks_labels_and_resets_positions() -> None:
 
 
 def test_collator_isolates_attention_between_documents() -> None:
-    """A 4D mask blocks attention across packed document boundaries."""
+    """A 4D mask blocks attention across packed document boundaries AND across the causal direction."""
     from finpost.training.dataset import PackingCollator, TokenizedSFTExample
 
     collator = PackingCollator(max_seq_len=8, eos_token_id=99, isolate_documents=True)
@@ -132,9 +132,26 @@ def test_collator_isolates_attention_between_documents() -> None:
         ]
     )
 
+    # Packed row: [1, 2, 3, EOS=99, 4, 5]  width=6
+    # doc_ids   : [0, 0, 0,    -1, 1, 1]
     mask = batch["attention_mask"]
     assert mask.shape == (1, 1, 6, 6)
-    assert mask[0, 0, 0, 2].item() == 1
-    assert mask[0, 0, 0, 3].item() == 0
-    assert mask[0, 0, 4, 5].item() == 1
+
+    # Causal direction within a document: query position 2 attends to past
+    # positions 0 and 1 of the same document.
+    assert mask[0, 0, 2, 0].item() == 1
+    assert mask[0, 0, 2, 1].item() == 1
+    assert mask[0, 0, 2, 2].item() == 1
+
+    # No future leakage even within the same document: query position 0
+    # cannot attend to position 2 (would be peeking at the future).
+    assert mask[0, 0, 0, 2].item() == 0
+
+    # Cross-document isolation: query position 4 (doc B) cannot attend to
+    # any position of doc A or to the EOS separator.
     assert mask[0, 0, 4, 1].item() == 0
+    assert mask[0, 0, 4, 3].item() == 0
+
+    # Same-document causal works in doc B too.
+    assert mask[0, 0, 5, 4].item() == 1
+    assert mask[0, 0, 5, 5].item() == 1
