@@ -97,25 +97,13 @@ def build_config(batch_size: int, max_seq_len: int) -> Config:
         ),
         packing=PackingConfig(
             max_seq_len=max_seq_len,
-            # Cross-document attention isolation requires the 4D
-            # attention mask path. Most HF models accept it, but the
-            # interaction with their internal causal-mask construction
-            # is subtle and varies by model. For this smoke test we
-            # use the simpler 2D padding mask (isolate_documents=False)
-            # and accept that response tokens of document B in a
-            # packed row can attend to document A.
-            #
-            # Why this is acceptable here:
-            #   - loss is still masked on prompt tokens (no spurious
-            #     gradient flows through the leakage),
-            #   - the EOS separator gives a strong "new document"
-            #     signal in the input stream,
-            #   - the goal is verifying loss decreases, which it does
-            #     even with imperfect packing.
-            #
-            # For production training, set isolate_documents=True and
-            # wire the 4D mask into the trainer carefully.
-            isolate_documents=False,
+            # Cross-document attention isolation. The collator builds
+            # a 4D attention mask that blocks attention across packed
+            # document boundaries AND enforces the causal triangle
+            # within each document. The trainer must pass that 4D
+            # mask plus the per-document position_ids to the model —
+            # see train_packed_step below.
+            isolate_documents=True,
         ),
     )
 
@@ -128,14 +116,18 @@ def train_packed_step(
 ) -> float:
     """One training step over a packed batch from the collator.
 
-    Differs from finpost.training.sft.train_step in one critical way:
-    that helper takes only (input_ids, labels) and never passes an
-    attention_mask. That works for the unpacked smoke test where every
-    sequence is the same length and there is no padding. With packing,
-    rows of different effective lengths are padded to a common width,
-    so we MUST pass the attention_mask — without it, the model would
-    attend to padding positions as if they were real content and the
-    loss would be wrong.
+    Differs from finpost.training.sft.train_step in two critical ways:
+
+    1. Passes attention_mask. Packed rows have padding to a common
+       width; without an attention_mask the model would attend to
+       padding positions as if they were real content. With
+       isolate_documents=True, the mask is also a 4D tensor that
+       blocks attention across packed-document boundaries.
+    2. Passes position_ids. The collator restarts position counting
+       at each document boundary in a packed row. Without explicit
+       position_ids the model would use 0..seq_len-1 across the whole
+       row — so the second document in a row would look like it
+       starts hundreds of tokens into the sequence, which it doesn't.
     """
     # batch is a dict of CPU tensors. We move each tensor to the
     # training device individually because dicts have no .to() method
@@ -143,7 +135,12 @@ def train_packed_step(
     # on the target device.
     input_ids = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
-    attention_mask = batch["attention_mask"].to(device)
+    # The collator returns the attention_mask as int64. PyTorch's SDPA
+    # (scaled_dot_product_attention) — which HF's modern attention
+    # path uses under the hood — requires the mask to be bool or
+    # float, not int. Cast to bool: True = "attend here", False = "block".
+    attention_mask = batch["attention_mask"].to(device).bool()
+    position_ids = batch["position_ids"].to(device)
 
     # zero_grad: reset .grad on every parameter to zero. PyTorch
     # accumulates gradients across successive .backward() calls — that
@@ -153,7 +150,10 @@ def train_packed_step(
 
     # Forward pass.
     #   input_ids:       (batch, seq_len) integer token IDs to embed
-    #   attention_mask:  (batch, seq_len) 1 = real, 0 = padding
+    #   attention_mask:  (batch, 1, seq_len, seq_len) 4D mask with
+    #                    document isolation AND causal direction baked in
+    #   position_ids:    (batch, seq_len) per-document positions that
+    #                    restart at 0 at each document boundary
     # The model returns a ModelOutput whose .logits has shape
     # (batch, seq_len, vocab_size). Note we deliberately do NOT pass
     # labels= to the model — that would trigger HF's internal loss
@@ -162,6 +162,7 @@ def train_packed_step(
     outputs = model(
         input_ids=input_ids,
         attention_mask=attention_mask,
+        position_ids=position_ids,
     )
 
     # compute_masked_ce_loss does three things at once:
