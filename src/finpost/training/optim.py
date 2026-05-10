@@ -48,10 +48,10 @@ def build_optimizer(
     Parameters
     ----------
     model
-        The model whose parameters will be optimized. Only parameters
-        with ``requires_grad=True`` are included; frozen parameters
-        are skipped (passing them to AdamW wastes memory on unused
-        moment buffers).
+        The model whose parameters will be optimized. Every parameter
+        from ``model.named_parameters()`` is placed in exactly one of
+        the two groups; AdamW respects ``requires_grad`` at update
+        time, so frozen parameters are harmless to include.
     lr
         Peak learning rate. Set on both groups; the scheduler will
         scale this down via ``LambdaLR``'s multiplicative factor.
@@ -67,12 +67,6 @@ def build_optimizer(
     no_decay_params: list[nn.Parameter] = []
 
     for name, param in model.named_parameters():
-        if not param.requires_grad:
-            # Frozen layers (e.g. an embedding we've explicitly frozen)
-            # have no gradient, so AdamW would just allocate unused
-            # state for them. Skip.
-            continue
-
         # The standard rule: bias parameters by name, and any 1-D
         # parameter (which catches LayerNorm/RMSNorm scales and any
         # other 1-D learnable vector) go into the no-decay bucket.
