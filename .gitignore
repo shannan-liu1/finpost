@@ -10,8 +10,8 @@ dist/
 htmlcov/
 
 # Virtual environments
-.venv/
-venv/
+.venv*/
+venv*/
 env/
 
 # Project bulk: never commit these to the repo
