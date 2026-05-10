@@ -526,31 +526,21 @@ def test_two_trainer_runs_with_same_config_match_loss_curve(
 # -----------------------------------------------------------------------------
 
 
-def test_resume_from_checkpoint_matches_uninterrupted_loss_trajectory(
+def test_resume_from_checkpoint_restores_training_mechanism(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """20-step run vs (10 + save + fresh + 10) → losses 11..20 match.
+    """Resume mechanism correctness: model weights, optimizer state, scheduler state, and
+    RNG state restore from a step-N checkpoint such that, given the same batch sequence,
+    post-resume losses match the uninterrupted run within atol=1e-5.
 
-    Implementation notes:
+    This test feeds run B exactly the batches it should see at steps N+1..2N
+    (``all_batches[N:]``) — it does NOT exercise the DataLoader iterator, because PyTorch
+    DataLoader iterator state is not part of our checkpoint format. Real fresh-process
+    resume calls ``iter(train_loader)`` again and may show a small loss blip in the first
+    few post-resume steps as already-seen batches replay.
 
-    1. Run A trains 20 steps end-to-end with a checkpoint saved at step
-       10 (cadence=10). Run B is a fresh Trainer that ``resume_from``s
-       A's step-10 checkpoint and trains to step 20. We compare losses
-       11..20.
-
-    2. The synthetic loader is built with 20 distinct batches (one per
-       step) so neither run cycles through the same batch twice. Run B
-       is given just the LAST 10 batches (indices 10..19). This sidesteps
-       a known limitation of single-process resume: the DataLoader
-       iterator state is not part of the checkpoint, so a fresh
-       ``iter(train_loader)`` starts at batch 0 regardless of where
-       training left off. By feeding run B exactly the batches it
-       SHOULD see at steps 11..20, the test isolates the resume
-       mechanism from loader-state restoration (which is out of scope
-       for this issue and a known feature gap).
-
-    3. Cosine schedule horizon: both runs configure ``max_steps=20``,
-       so the LR at any step 11..20 is identical between the two.
+    See the workstream PRD's 2026-05-10 amendment for the design decision and the
+    follow-up issue.
     """
     _patch_tiny_model_load(monkeypatch)
 

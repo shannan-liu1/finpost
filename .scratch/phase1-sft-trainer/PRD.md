@@ -123,3 +123,13 @@ These I'll just pick unless you push back:
 - Prompt/response serialization is deferred to dataset-construction time, not loader time. Reason: the trainer might want to experiment with different prompt formats (`<bos>question\n`, Qwen ChatML-style messages, or a plain question/answer format) and the loader shouldn't be coupled to that decision.
 - The `train.py` entry point is a separate file rather than `python -m finpost.training`; this is so a future `eval.py` can be a sibling and the package layout reads naturally.
 - Local model ladder: `sshleifer/tiny-gpt2` is the infrastructure canary for a 4 GB local machine; `distilgpt2` is an optional heavier CPU sanity check; `Qwen/Qwen2.5-0.5B` is the actual Phase 1 model.
+
+## Amendment 2026-05-10 — DataLoader iterator state out of scope for resume
+
+Issue 05 (Trainer) ships with a resume mechanism that restores model, optimizer, scheduler, RNG state, and step counter from a checkpoint. It does NOT restore the DataLoader iterator's position. On a fresh-process resume, `iter(train_loader)` starts a new shuffle, which consumes RNG state and produces a different batch sequence than the original run was on at the checkpoint step.
+
+Practical impact: a real resume will replay already-seen batches for the first portion of the post-resume epoch and may show a small (~sub-1% over a long run) loss blip in the first few steps. This is the same limitation that HuggingFace `Trainer`, PyTorch Lightning, and `accelerate` all have without a stateful sampler.
+
+Issue 05's criterion 3 ("resume continuity, atol=1e-5 over steps 11..20") was originally written assuming bit-identical resume. The implementation provides bit-identical RESUME MECHANISM (params/opt/scheduler/RNG round-trip) but not bit-identical loss trajectory. The renamed test `test_resume_from_checkpoint_restores_training_mechanism` validates the mechanism by feeding run B the correct batches manually.
+
+Stateful-sampler checkpointing is filed as a follow-up issue and explicitly out of scope for the Phase 1 closing milestone (issue 06). For Phase 1's use case (small datasets, mostly single-shot Colab runs), the loss blip is operationally invisible.
