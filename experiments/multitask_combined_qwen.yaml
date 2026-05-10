@@ -1,0 +1,55 @@
+# Multi-task transfer ablation — Qwen2.5-0.5B trained on combined
+# GSM8K + MATH. This is the COMBINED arm of the three-arm comparison
+# documented in `notebooks/sft_phase1_multitask.ipynb`.
+#
+# Run with (in the Colab notebook):
+#   !python -m finpost.training.train \
+#       --config experiments/multitask_combined_qwen.yaml --device cuda
+#
+# Hyperparameters are deliberately identical across the three multitask
+# arms (combined / gsm8k_only / math_only). The whole point of the
+# comparison is to vary ONLY the training data and read off the gap in
+# loss on each test set; varying lr or batch size between arms would
+# confound the result.
+
+model:
+  base_model_id: Qwen/Qwen2.5-0.5B
+  dtype: bfloat16
+  use_safetensors: true
+
+data:
+  # Both sources — this is the "combined" arm.
+  sources: [gsm8k, math]
+  val_split_pct: 5.0
+  seed: 42
+
+training:
+  # Shorter than baseline.yaml (3000) — three arms back-to-back must
+  # fit a single Colab session (~75 minutes total at ~3 sec/step on T4).
+  # Crank to 3000 once the smoke comparison looks reasonable.
+  max_steps: 500
+  warmup_steps: 50
+  lr: 2.0e-5
+  weight_decay: 0.01
+  grad_accum_steps: 4
+  grad_clip: 1.0
+  val_every_n_steps: 100
+  checkpoint_every_n_steps: 250
+  per_device_batch_size: 4
+
+packing:
+  max_seq_len: 1024
+  isolate_documents: true
+
+logging:
+  wandb_project: finpost-phase1-multitask
+  # Run name is unique per arm so the wandb dashboard and the on-disk
+  # checkpoints don't collide when all three arms run in the same session.
+  run_name: multitask-combined-qwen-500m
+
+checkpointing:
+  # Each arm writes to its own subdirectory under results/checkpoints/.
+  # The eval cell in the notebook reads back from these three paths.
+  save_dir: results/checkpoints/multitask-combined-qwen-500m
+  retention_last_n: 2
+  resume_from: null

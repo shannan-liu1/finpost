@@ -1,0 +1,67 @@
+# Headline Colab config — Qwen2.5-0.5B on combined GSM8K + MATH for a
+# free Colab T4 (15 GB VRAM).
+#
+# Run with (in the Colab notebook):
+#   !python -m finpost.training.train --config experiments/colab_qwen_500m.yaml --device cuda
+#
+# This file is the conservative first run for a fresh user: ~500 steps
+# instead of baseline.yaml's 3000, batch_size 4 instead of 8, max_seq_len
+# 1024 instead of 4096. The shorter run shows real learning in roughly
+# 20-30 minutes on T4; the smaller batch and seq length leave plenty of
+# headroom so the user does not fight OOM on their first session.
+#
+# Once a 500-step run looks healthy, copy this file, lift max_steps
+# toward baseline.yaml's value, and consider raising batch_size to 6 or 8
+# (T4 has the VRAM if max_seq_len stays at 1024).
+
+model:
+  base_model_id: Qwen/Qwen2.5-0.5B
+  dtype: bfloat16
+  use_safetensors: true
+
+data:
+  sources: [gsm8k, math]
+  val_split_pct: 5.0
+  seed: 42
+
+training:
+  # Demo length — 500 optimizer steps fits a single Colab session
+  # comfortably and produces a visible loss drop. baseline.yaml uses
+  # 3000 for the published Phase 1 baseline.
+  max_steps: 500
+  # Proportional warmup (~10% of max_steps) instead of baseline's
+  # absolute 100 — keeps the schedule shape sensible for a short run.
+  warmup_steps: 50
+  lr: 2.0e-5
+  weight_decay: 0.01
+  # Effective batch = per_device_batch_size * grad_accum_steps = 4 * 4 = 16,
+  # half of baseline's 32. Smaller is fine for a demo and reduces VRAM
+  # pressure on T4.
+  grad_accum_steps: 4
+  grad_clip: 1.0
+  # More frequent than baseline (250) — for a 500-step run we want a few
+  # validation samples in the curve.
+  val_every_n_steps: 100
+  # One checkpoint mid-run plus the final one (Trainer always writes a
+  # final checkpoint at the end). retention_last_n below caps disk usage.
+  checkpoint_every_n_steps: 250
+  # Smaller than baseline (8) — leaves VRAM headroom on T4. Activations
+  # at bs=4 / seq_len=1024 / bf16 fit comfortably alongside the model
+  # (~1 GB), AdamW state (~4 GB), and gradients (~1 GB).
+  per_device_batch_size: 4
+
+packing:
+  # Smaller than baseline (4096) — T4 cannot afford 4k-token activations
+  # for a 0.5B model with bf16 AdamW state; 1024 covers GSM8K's p95 of
+  # 312 tokens with room for 2-3 packed documents per row.
+  max_seq_len: 1024
+  isolate_documents: true
+
+logging:
+  wandb_project: finpost-phase1
+  run_name: qwen2.5-0.5b-colab-demo
+
+checkpointing:
+  save_dir: results/checkpoints/qwen2.5-0.5b-colab-demo
+  retention_last_n: 2
+  resume_from: null
