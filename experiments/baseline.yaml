@@ -1,0 +1,51 @@
+# Phase 1 SFT reference baseline — Qwen2.5-0.5B on combined GSM8K + MATH.
+#
+# Run with (in the GPU target environment, e.g. Colab A100):
+#   python -m finpost.training.train --config experiments/baseline.yaml
+#
+# For a 20-step soft launch (criterion 6 in issue 06):
+#   python -m finpost.training.train --config experiments/baseline.yaml --max-steps 20
+#
+# Numbers chosen as starting points; the Phase 1 ablation matrix
+# workstream will vary lr, max_steps, and dataset composition from
+# this file.
+
+model:
+  base_model_id: Qwen/Qwen2.5-0.5B
+  dtype: bfloat16
+  use_safetensors: true
+
+data:
+  sources: [gsm8k, math]
+  val_split_pct: 5.0
+  seed: 42
+
+training:
+  max_steps: 3000
+  warmup_steps: 100
+  lr: 2.0e-5
+  weight_decay: 0.01
+  grad_accum_steps: 4
+  grad_clip: 1.0
+  val_every_n_steps: 250
+  checkpoint_every_n_steps: 500
+  per_device_batch_size: 8
+
+packing:
+  max_seq_len: 4096
+  isolate_documents: true
+
+logging:
+  wandb_project: finpost-phase1
+  # Trainer does NOT auto-generate run names — passing null here would
+  # surface as an unnamed wandb run. Pin a stable identifier; the
+  # ablation matrix workstream will vary it per cell.
+  run_name: qwen2.5-0.5b-baseline
+
+checkpointing:
+  # Trainer writes ``step-XXXXXXXX/`` directly under save_dir. We bake
+  # the run_name into save_dir so concurrent runs don't collide and
+  # the path matches the convention from local_tiny_gpt2.yaml.
+  save_dir: results/checkpoints/qwen2.5-0.5b-baseline
+  retention_last_n: 3
+  resume_from: null

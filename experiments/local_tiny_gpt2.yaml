@@ -1,0 +1,53 @@
+# Local TinyGPT canary config — issue 06's closing acceptance check.
+#
+# Purpose: exercise the production training path on the local machine
+# (4 GB RAM, no GPU) before pointing the Trainer at Qwen 0.5B in Colab.
+# Loss measurement, validation loss, offline tracking, checkpoint
+# save/load, and resume all run end-to-end through this config.
+#
+# Run with:
+#   $env:WANDB_MODE = "offline"
+#   .venv/Scripts/python.exe -m finpost.training.train \
+#       --config experiments/local_tiny_gpt2.yaml --device cpu
+#
+# The model is sshleifer/tiny-gpt2 — a ~1 MB random-init GPT-2 that
+# ships with the HuggingFace test suite. Loss will not improve in any
+# meaningful way; the canary checks plumbing, not learning.
+
+model:
+  base_model_id: sshleifer/tiny-gpt2
+  dtype: float32          # bf16 on CPU is slow and noisy; float32 is the right canary dtype.
+  use_safetensors: false  # tiny-gpt2 ships pickle weights only — local canary scope.
+
+data:
+  sources: [gsm8k, math]
+  val_split_pct: 5.0
+  seed: 42
+
+training:
+  max_steps: 20
+  warmup_steps: 1
+  lr: 1.0e-4
+  weight_decay: 0.01
+  grad_accum_steps: 1
+  grad_clip: 1.0
+  val_every_n_steps: 5
+  checkpoint_every_n_steps: 10
+  per_device_batch_size: 2
+
+packing:
+  max_seq_len: 128
+  isolate_documents: true
+
+logging:
+  wandb_project: finpost-phase1-local
+  run_name: tiny-gpt2-local-canary
+
+checkpointing:
+  # Trainer writes checkpoints directly under save_dir as
+  # ``step-XXXXXXXX/`` (no run_name subdivision). We bake the run_name
+  # into save_dir so the criterion 3 path
+  # ``results/checkpoints/<run_name>/step-00000020/`` holds.
+  save_dir: results/checkpoints/tiny-gpt2-local-canary
+  retention_last_n: 2
+  resume_from: null
