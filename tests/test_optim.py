@@ -150,15 +150,13 @@ def _take_optimizer_step(opt: torch.optim.Optimizer) -> None:
 
 
 def test_scheduler_lr_is_zero_at_step_zero() -> None:
-    """Linear warmup must start at exactly zero, not at the peak.
-
-    After ``LambdaLR.__init__`` PyTorch evaluates the lambda at
-    ``last_epoch=0`` and writes the result to ``param_groups[*]['lr']``.
-    So if the warmup factor at step 0 is 0, the LR we read here is 0.
+    """After construction and before any scheduler step, the LR is zero
+    (because ``LambdaLR.__init__`` evaluates the lambda at ``last_epoch=0``).
     """
     peak = 1e-3
     opt = _fresh_optimizer(peak_lr=peak)
     _ = build_lr_scheduler(opt, total_steps=1000, warmup_steps=100)
+    _take_optimizer_step(opt)  # silence the "step before optimizer" warning
 
     for group in opt.param_groups:
         assert group["lr"] == 0.0
