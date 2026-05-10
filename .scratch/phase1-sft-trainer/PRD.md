@@ -133,3 +133,7 @@ Practical impact: a real resume will replay already-seen batches for the first p
 Issue 05's criterion 3 ("resume continuity, atol=1e-5 over steps 11..20") was originally written assuming bit-identical resume. The implementation provides bit-identical RESUME MECHANISM (params/opt/scheduler/RNG round-trip) but not bit-identical loss trajectory. The renamed test `test_resume_from_checkpoint_restores_training_mechanism` validates the mechanism by feeding run B the correct batches manually.
 
 Stateful-sampler checkpointing is filed as a follow-up issue and explicitly out of scope for the Phase 1 closing milestone (issue 06). For Phase 1's use case (small datasets, mostly single-shot Colab runs), the loss blip is operationally invisible.
+
+## Amendment 2026-05-10 (b) — Throughput log cadence lowered to 10
+
+Issue 05's spec note said "log `train/tokens_per_sec` every 50 steps." Issue 06's amended acceptance criterion 2 requires the metric to appear in a 20-step canary's tracking artifacts. The two were inconsistent. Resolved by lowering the cadence in `Trainer` from 50 to 10 — short canary runs still emit at least one throughput sample at step 10, longer baseline runs still get smoothed-enough samples. No other behavior change.

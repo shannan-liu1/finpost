@@ -382,9 +382,11 @@ class Trainer:
                 grad_norm=float(grad_norm),
             )
 
-            # Tokens-per-sec window. Log only every 50 steps to avoid
-            # noisy throughput numbers from per-step jitter.
-            if self.global_step % 50 == 0:
+            # Tokens-per-sec window. Log every 10 steps so a short canary run
+            # (max_steps=20) still emits at least one throughput sample at
+            # step 10; longer baseline runs still get smoothed-enough samples
+            # without per-step jitter.
+            if self.global_step % 10 == 0:
                 elapsed = time.perf_counter() - window_start
                 if elapsed > 0:
                     wandb.log(
