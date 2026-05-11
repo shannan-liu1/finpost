@@ -14,11 +14,17 @@ htmlcov/
 venv*/
 env/
 
-# Project bulk: never commit these to the repo
-data/                # raw filings, processed examples — large and reproducible
-results/             # checkpoints, eval outputs — large and reproducible
-checkpoints/         # alternate checkpoint location if used
-wandb/               # local Weights & Biases run logs
+# Project bulk: never commit these to the repo.
+# data/        — raw filings, processed examples (large, reproducible)
+# results/     — checkpoints, eval outputs (large, reproducible)
+# checkpoints/ — alternate checkpoint location if used
+# wandb/       — local Weights & Biases run logs
+# Inline comments are NOT valid in .gitignore — keep comments on their own lines
+# above each block, otherwise the pattern matches literal whitespace + "#".
+data/
+results/
+checkpoints/
+wandb/
 
 # But DO keep the README.md inside data/ and results/ so the directories
 # survive a fresh clone with their purpose documented.
