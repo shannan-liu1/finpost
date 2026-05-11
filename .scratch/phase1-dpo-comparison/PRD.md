@@ -4,7 +4,7 @@
 - **Created:** 2026-05-09
 - **Owner:** Shannan
 - **Estimated time:** ~1 week after Phase 1 SFT trainer lands
-- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md)
+- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md), [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md)
 
 ## Goal
 
@@ -57,6 +57,16 @@ tests/test_preference_data.py
 
 ## Notes / open questions
 
-- Open decision Q-B from `PLAN.md` lives here: how to handle prompts where all sampled completions are correct or all are incorrect.
-- Default policy until decided: keep mixed prompts where at least one correct and one incorrect completion exist; separately track all-correct/all-incorrect rates as a model-quality signal.
-- DPO should not start until the SFT checkpoint is real. Otherwise there is no meaningful policy model to improve.
+- Open decision Q-B from `PLAN.md` lives here: how to handle prompts where all sampled completions are correct or all are incorrect. **Resolved 2026-05-11 by Phase 1.5 Stage 3 (preference-pair builder): all-correct and all-incorrect prompts contribute zero pairs.**
+- This workstream now reuses the rollout cache, verifier, and preference-pair dataset produced by [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md). The "build preference pairs" issue in this workstream becomes a consumption-side issue: load the Phase 1.5 dataset, confirm bucket metadata is intact, and run the comparison.
+- DPO should not start until the SFT checkpoint is real and Phase 1.5 Stage 3 has emitted a preference dataset. Otherwise there is no meaningful policy model to improve and no on-policy preference data to compare offline DPO against.
+
+## Amendment 2026-05-11 — preference data sourced from Phase 1.5
+
+The original deliverable list for this workstream included `scripts/build_dpo_pairs.py` and `src/finpost/training/preference_data.py`. These are superseded by the Phase 1.5 rollout, verifier, bucketing, and preference-pair modules under `src/finpost/postraining/`. This workstream now owns:
+
+- the DPO loss implementation (`src/finpost/training/dpo.py`),
+- the numerical parity test against the Phase 1.5 OPD loss on uniform inputs,
+- the Base vs. SFT vs. SFT+DPO vs. SFT+OPD comparison report.
+
+The comparison adds **SFT+OPD** as a fourth arm so that offline DPO and On-Policy Distillation can be measured on the same evaluation surface. Whether they should remain separate workstreams or be merged is a decision deferred until both have produced a first result.

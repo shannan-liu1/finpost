@@ -4,7 +4,7 @@
 - **Created:** 2026-05-08
 - **Owner:** Shannan
 - **Estimated time:** 3-5 days for research/design, 1-2 weeks for a first toy implementation after SFT and DPO land
-- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md), Phase 1 Direct Preference Optimization workstream, evaluation harness
+- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md), [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md), Phase 1 Direct Preference Optimization workstream, evaluation harness
 
 ## Goal
 
@@ -108,3 +108,15 @@ This workstream exists to preserve the idea without letting it distort the curre
 - It is dangerous if introduced too early because the model can learn to exploit weak reward prompts or superficial formatting.
 - The pedagogical sequence remains: Supervised Fine-Tuning first, Direct Preference Optimization second, GRPO third.
 - "GPRO" in casual notes should be normalized to "GRPO" in repo documentation.
+
+## Amendment 2026-05-11 — reuse Phase 1.5 rollout and verifier plumbing
+
+The original implementation plan implied this workstream would build its own rollout/sampler/verifier stack. Those components are now built in [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md) and exposed under `src/finpost/postraining/` (`rollout.py`, `verifier.py`, `bucket.py`, `cost_ledger.py`). This workstream consumes them and adds only:
+
+- grouped advantage normalization,
+- KL control against a frozen reference model,
+- the policy-gradient update step,
+- reward-component aggregation beyond final-answer correctness (citation faithfulness, computation correctness, format compliance — when needed for Phase 2),
+- tests for reward functions and the policy-update loop.
+
+The cost ledger format and the rollout cache format are owned by Phase 1.5 and reused unchanged.
