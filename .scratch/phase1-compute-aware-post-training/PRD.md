@@ -4,7 +4,7 @@
 - **Created:** 2026-05-11
 - **Owner:** Shannan
 - **Estimated time:** ~2–3 weeks after the Phase 1 SFT baseline lands
-- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md), [`phase1-training-runbook`](../phase1-training-runbook/PRD.md)
+- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md), [`phase1-training-runbook`](../phase1-training-runbook/PRD.md), [`phase1-base-vs-sft-eval`](../phase1-base-vs-sft-eval/PRD.md)
 
 ## Goal
 
@@ -95,6 +95,8 @@ Ladder of verifiers, cheapest first. For GSM8K and MATH, the exact-answer parser
 Per-checkpoint evaluation curves are produced (accuracy vs. step, accuracy vs. training tokens, accuracy vs. GPU-time).
 
 **Why three:** the specialist arms are the cleanest comparison surface for the later compute-aware methods. They also confirm whether combined training transfers across GSM8K and MATH on this substrate.
+
+**Eval mechanism:** per-checkpoint accuracy is produced by invoking the CLI built in [`phase1-base-vs-sft-eval`](../phase1-base-vs-sft-eval/PRD.md) (`python -m finpost.evals.eval_exact`) on each saved checkpoint, then aggregating the resulting `accuracy_summary.json` files into `eval_curve.json`. The same CLI is reused at Stage 5 to evaluate every post-training arm against the base model. Centralising the eval primitive ensures every method comparison is measured on the same instrument.
 
 **Decision rule:**
 - train loss falling and eval accuracy rising at step 3,000 → schedule one 5,000-step run on the winning arm.
