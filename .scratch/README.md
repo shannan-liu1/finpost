@@ -69,6 +69,7 @@ Anything we know but haven't resolved. Not load-bearing — just memory.
 | [`sft-trainer-skeleton`](./sft-trainer-skeleton/PRD.md) | Supervised Fine-Tuning trainer skeleton | Done |
 | [`phase1-sft-trainer`](./phase1-sft-trainer/PRD.md) | Phase 1 production SFT trainer on GSM8K + MATH | In Progress (drafting) |
 | [`phase1-training-runbook`](./phase1-training-runbook/PRD.md) | Phase 1 command-by-command training runbook and execution issues | In Progress |
-| [`phase1-dpo-comparison`](./phase1-dpo-comparison/PRD.md) | Phase 1 DPO trainer and SFT comparison | Not Started |
-| [`phase1-grpo-research`](./phase1-grpo-research/PRD.md) | GRPO research track for verifiable numerical reasoning | Not Started |
+| [`phase1-compute-aware-post-training`](./phase1-compute-aware-post-training/PRD.md) | Phase 1.5 compute-aware post-training: rollouts, verifier, bucketing, On-Policy Distillation, cost ledger | Not Started |
+| [`phase1-dpo-comparison`](./phase1-dpo-comparison/PRD.md) | Phase 1 DPO trainer and SFT comparison (fixed offline preference dataset; offline-DPO vs. on-policy-OPD is a deliberate split) | Not Started |
+| [`phase1-grpo-research`](./phase1-grpo-research/PRD.md) | GRPO research track for verifiable numerical reasoning (consumes Phase 1.5 rollout cache and verifier) | Not Started |
 | [`phase2-filing-distillation-dataset`](./phase2-filing-distillation-dataset/PRD.md) | Phase 2 filing distillation dataset | Not Started |

@@ -82,10 +82,11 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
 
 ### 1.4 Direct Preference Optimization preparation
 
-- [ ] From the best SFT checkpoint, sample N=8 completions per prompt at temperature 0.8 over a held-out set of training prompts (not test).
-- [ ] Programmatically grade each completion (final-answer match).
-- [ ] Form preference pairs:
-  - `[OPEN]` Decision Q-B: how to handle prompts with all-correct or all-incorrect samples? See decisions section.
+DPO keeps its **own fixed offline** preference-pair pipeline, deliberately separate from the Phase 1.5 on-policy rollout pipeline. The two pipelines share the verifier ladder and the pairwise-loss math; they do not share data. The split lets us measure offline DPO against on-policy On-Policy Distillation as two distinct training regimes on the same evaluation surface. Decision Q-B (all-correct / all-incorrect prompts) is resolved by construction in both pipelines independently: such prompts contribute zero pairs and are tracked separately as a model-quality signal.
+
+- [ ] From the best SFT checkpoint, sample N=8 completions per prompt at temperature 0.8 over a held-out set of training prompts (not test). DPO does this **once**; the dataset is frozen for the run.
+- [ ] Programmatically grade each completion (final-answer match) using the shared verifier ladder under `src/finpost/postraining/verifier.py`.
+- [ ] Form preference pairs using this workstream's own builder.
 - [ ] Target: ~5,000 preference pairs.
 
 ### 1.5 Direct Preference Optimization implementation (from scratch, no TRL trainer)
@@ -121,6 +122,43 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
 - [ ] Ablation tables with confidence intervals.
 - [ ] A short writeup (one page) documenting what worked, what didn't.
 
+---
+
+## Phase 1.5 — Compute-aware post-training (≈2–3 weeks)
+
+**Goal:** turn post-training itself into a benchmarked, cost-aware experiment. Use the best Phase 1 SFT checkpoint as the starting policy, sample rollouts cheaply, verify each completion with the cheapest sufficient verifier, bucket prompts by difficulty, and allocate dense pairwise supervision (On-Policy Distillation, OPD) only where the model is uncertain. Report every method alongside its rollout cost, verifier cost, training cost, GPU-hours, and dollars — and the derived `accuracy / $` and `accuracy / GPU-hour` ratios.
+
+**Headline claim under test:**
+
+> Verifier-weighted, adaptive-compute On-Policy Distillation improves GSM8K and MATH accuracy per GPU-hour over uniform SFT, rejection SFT, and uniform OPD on `Qwen/Qwen2.5-0.5B`.
+
+Full scope, acceptance criteria, and stage-sliced issues live in [`.scratch/phase1-compute-aware-post-training/PRD.md`](.scratch/phase1-compute-aware-post-training/PRD.md).
+
+**Sequencing inside Phase 1.5:**
+
+1. **Stage 0 — 3K-step SFT comparison surface.** Three SFT arms (`gsm8k_only`, `math_only`, `combined`) at 3,000 steps each, eval and checkpoint every 500. Best-by-validation, not best-by-final-step.
+2. **Stage 1 — Cheap initial rollout.** K=4 from the chosen SFT checkpoint, with a deterministic on-disk cache keyed on `(model_revision, prompt_id, sampling_params_hash)`.
+3. **Stage 2 — Adaptive sampling.** K_extra (default 12, up to 28) on ambiguous prompts only.
+4. **Stage 3 — Preference-pair construction.** All-correct and all-incorrect prompts contribute zero pairs (resolves Q-B by construction).
+5. **Stage 4 — On-Policy Distillation trainer (OPD).** Direct-Preference-Optimization-style pairwise loss with `train_weight` multiplier. Numerical parity against the Phase 1 DPO loss within `1e-5` on uniform inputs.
+6. **Stage 5 — Five-method comparison.** Uniform SFT / rejection SFT / uniform OPD / verifier-weighted OPD / adaptive-compute OPD at two preset budgets (small and medium).
+7. **Stage 6 — Cost ledger and writeup.** Names the winner per axis.
+
+**Cost philosophy (durable operating rules):**
+
+- Cache everything: prompts, generations, parsed answers, verifier results, tokenized datasets, evaluation outputs.
+- Adaptive sampling, not uniform K. Spend extra rollout tokens only where uncertainty is high.
+- Separate rollout from training. Rollouts may run on cheaper or quantized inference; training runs in bf16 full precision; the cost ledger records both.
+- Cheapest verifier first: exact parser → symbolic / numeric → small local model. LLM-as-judge is disallowed for numerical correctness.
+- Cost as a first-class metric. Every comparison reports `accuracy / $` and `accuracy / GPU-hour` alongside accuracy.
+- Default GPU is a single A100 or H100 spot instance. Post-training Qwen 0.5B on ≈15K math examples has orders of magnitude less data than the 10B-token pretraining runs that finish in 10–90 minutes on these GPUs (cf. llm.c GPT-2 124M, ~90 min on 8×A100, ~$20). The cost-gate checklist captures the per-run choice between A100 and H100; T4 / Colab is permitted only for sub-5-minute sanity-check runs. Total spend target for the headline ten-run comparison: < $25.
+
+**Decisions resolved by Phase 1.5:**
+
+- **Q-B** (handling DPO prompts with all-correct or all-incorrect samples) — resolved by construction in Stage 3.
+
+---
+
 ### 1.8 Deferred reinforcement-learning research track
 
 Group Relative Policy Optimization (GRPO) is in scope for post-training, but out of scope for the current Phase 1 trainer. It becomes a separate workstream after the SFT and DPO path is implemented and evaluated.
@@ -136,8 +174,9 @@ Reason: GRPO changes the training loop from fixed examples or fixed preference p
 The current pedagogical order is:
 
 1. Build SFT first to learn masking, packing, loss, checkpointing, and basic training dynamics.
-2. Add DPO next to learn preference-pair optimization without running an online reinforcement-learning loop.
-3. Add GRPO later, only after the verifier and evaluation harness are strong enough to support reward-driven training.
+2. Build the Phase 1.5 compute-aware post-training pipeline next — rollouts, verifiers, bucketing, the cost ledger, and On-Policy Distillation. This produces the rollout cache and verifier that GRPO will reuse.
+3. Add DPO using the Phase 1.5 preference dataset to learn offline preference-pair optimization without running an online reinforcement-learning loop.
+4. Add GRPO last, on top of the Phase 1.5 rollout/verifier plumbing, once the verifier and evaluation harness are strong enough to support reward-driven training.
 
 ---
 
@@ -315,7 +354,7 @@ Identical Phase 2 finance training data and hyperparameters across arms; the onl
 | ~~Q-A~~ | ~~Write our own SFT trainer or use Hugging Face `Trainer`~~ → **DECIDED**: write our own from scratch (2026-05-05) | 1.2 |
 | ~~Q-G~~ | ~~Gemma 1B or Qwen 0.5B for Phase 1 base experimentation~~ -> **DECIDED**: use `Qwen/Qwen2.5-0.5B` as the canonical base model; keep the instruct model only as a baseline (2026-05-08, ADR-0001) | 1.2 |
 | ~~Q-H~~ | ~~What model validates the trainer on a 4 GB local machine before Qwen~~ -> **DECIDED**: use `sshleifer/tiny-gpt2` as an infrastructure canary; optionally use `distilgpt2` as a heavier CPU sanity check, but do not make it a gate (2026-05-09) | 1.2 |
-| Q-B | How to handle DPO prompts with all-correct or all-incorrect SFT samples | 1.4 |
+| ~~Q-B~~ | ~~How to handle DPO prompts with all-correct or all-incorrect SFT samples~~ → **DECIDED 2026-05-11 (Phase 1.5 Stage 3): resolved by construction.** Prompts with all-correct or all-incorrect rollouts contribute zero preference pairs; they are bucketed as `easy` or `hard` and routed to down-weighted SFT or curriculum handling instead of into the preference dataset. | 1.4 |
 | Q-C | Test-set sample size for statistical power on ~5-percentage-point gains | 1.6 |
 | Q-D | Exact company list for the Phase 2 corpus | 2.1 |
 | Q-E | Teacher model for distillation (Claude vs. GPT-5 vs. both) | 2.3 |

@@ -57,6 +57,25 @@ tests/test_preference_data.py
 
 ## Notes / open questions
 
-- Open decision Q-B from `PLAN.md` lives here: how to handle prompts where all sampled completions are correct or all are incorrect.
-- Default policy until decided: keep mixed prompts where at least one correct and one incorrect completion exist; separately track all-correct/all-incorrect rates as a model-quality signal.
+- Open decision Q-B from `PLAN.md` ("how to handle prompts where all sampled completions are correct or all are incorrect") is resolved by construction in this workstream's preference-pair builder: prompts with all-correct or all-incorrect samples contribute zero pairs and are tracked separately as a model-quality signal. The Phase 1.5 builder applies the same rule independently.
 - DPO should not start until the SFT checkpoint is real. Otherwise there is no meaningful policy model to improve.
+
+## Amendment 2026-05-11 — DPO stays offline; OPD stays on-policy
+
+This workstream and [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md) deliberately use **separate** preference-pair pipelines. The split is itself a comparison axis:
+
+- DPO uses a **fixed offline preference dataset**: sample N=8 completions per held-out training prompt from the SFT-best checkpoint **once**, grade with the same verifier ladder Phase 1.5 uses, build pairs once, and train DPO against that frozen dataset.
+- OPD uses an **on-policy** preference dataset: rollouts are sampled fresh from the current training policy at each scheduled refresh, with adaptive K on ambiguous prompts.
+
+Both pipelines share:
+- the verifier ladder under `src/finpost/postraining/verifier.py`,
+- the DPO-style pairwise loss math (per-example loss must match within `1e-5` on uniform inputs — the parity test lives here).
+
+Each pipeline owns its own:
+- rollout cache,
+- preference-pair builder,
+- training driver.
+
+The combined Phase 1 evaluation surface then has at least four arms — Base, SFT, SFT+DPO (this workstream), SFT+OPD (Phase 1.5) — measured on the same harness. A merged "preference-pair builder" abstraction is explicitly deferred until both pipelines have produced a first result; merging earlier would collapse the offline-vs-on-policy distinction.
+
+Deliverables restored: `scripts/build_dpo_pairs.py` and `src/finpost/training/preference_data.py` belong to this workstream.
