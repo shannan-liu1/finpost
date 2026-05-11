@@ -42,7 +42,7 @@ A previous estimate priced an SFT run at ~$100/A100-hour-class spend. The llm.c 
 
 **Out of scope (lives elsewhere):**
 
-- The DPO comparison study itself. The OPD trainer's pairwise loss is reused there; the comparison of Base vs. SFT vs. SFT+DPO using offline preference pairs lives in [`phase1-dpo-comparison`](../phase1-dpo-comparison/PRD.md).
+- The DPO comparison study itself. [`phase1-dpo-comparison`](../phase1-dpo-comparison/PRD.md) builds its own **fixed offline** preference dataset, runs DPO against it, and compares Base vs. SFT vs. SFT+DPO. This workstream and the DPO workstream share the verifier ladder and the DPO-style pairwise loss math (with a `1e-5` parity test enforced on uniform inputs) but each owns its own rollout cache and preference dataset. The split is intentional: offline-DPO vs. on-policy-OPD is itself a comparison axis.
 - The GRPO online reinforcement-learning loop. Reward functions and grouped advantages live in [`phase1-grpo-research`](../phase1-grpo-research/PRD.md). This workstream supplies the rollout cache and verifier that GRPO will reuse.
 - 10-K / filing domain data. Phase 2 ([`phase2-filing-distillation-dataset`](../phase2-filing-distillation-dataset/PRD.md)) consumes the compute-aware contracts produced here; it does not modify them.
 - Multi-GPU and distributed training. The pipeline targets a single GPU (Colab T4 or a single rented A10 / L4 / A100). Multi-GPU is a follow-up if cost-per-experiment becomes the bottleneck.
@@ -105,7 +105,7 @@ Per-checkpoint evaluation curves are produced (accuracy vs. step, accuracy vs. t
 
 **Behaviour contract:** From the chosen SFT checkpoint, sample K=4 completions for every prompt in a held-out training-prompt set (not test). Run the exact-answer verifier on every completion. Produce a parquet/jsonl file with `(prompt_id, sample_idx, completion, parsed_answer, is_correct, model_revision, sampling_params_hash)`. Aggregate into `(prompt_id, p_correct, bucket, n_samples)`.
 
-**Cost target:** total rollout tokens at this stage `≤ 4 × num_prompts × p99_output_tokens`. Wall-clock `≤ 30 minutes on a single T4`.
+**Cost target:** total rollout tokens at this stage `≤ 4 × num_prompts × p99_output_tokens`. Wall-clock `≤ 30 minutes on a single A100` (≤ 15 minutes on H100). Cost `≤ $1`.
 
 ### Stage 2 — Adaptive sampling on ambiguous prompts
 
@@ -117,7 +117,7 @@ Per-checkpoint evaluation curves are produced (accuracy vs. step, accuracy vs. t
 
 **Behaviour contract:** From the rollout cache, build preference pairs for any prompt where at least one correct and one incorrect completion exists. Each pair carries `(prompt, chosen, rejected, bucket, train_weight, source_checkpoint, source_revision, sample_idx_chosen, sample_idx_rejected)`. The pair distribution per prompt is configurable (e.g. "all pairs", "best-vs-worst", "random one pair per prompt").
 
-This stage emits the dataset that the OPD trainer consumes, and is also reusable by [`phase1-dpo-comparison`](../phase1-dpo-comparison/PRD.md) as its preference dataset (resolving open decision Q-B in PLAN.md by construction: all-correct and all-incorrect prompts produce zero pairs and are bucketed for separate handling).
+This stage emits the on-policy preference dataset that the OPD trainer consumes. It is **not** shared with [`phase1-dpo-comparison`](../phase1-dpo-comparison/PRD.md), which builds its own fixed offline preference dataset — keeping offline DPO and on-policy OPD as separate comparison axes. The two pipelines share the verifier and the pairwise-loss math, not the data. All-correct and all-incorrect prompts produce zero pairs and are bucketed for separate handling (Q-B in PLAN.md is resolved by construction in both pipelines independently).
 
 ### Stage 4 — On-Policy Distillation trainer (OPD)
 
@@ -144,7 +144,16 @@ For the same SFT-best checkpoint, run:
 - **D. verifier-weighted OPD.** OPD with bucket-derived `train_weight` (default schedule).
 - **E. adaptive-compute OPD.** Verifier-weighted OPD plus Stage 2 adaptive rollouts. The headline arm.
 
-Each method runs at two preset budgets — a small budget (target: 1 T4-hour) and a medium budget (target: 4 T4-hour or 1 A10-hour equivalent) — so the cost-vs-accuracy curves are directly comparable.
+Each method runs at two preset budgets — a **small budget** (≈30 minutes on a single A100, ~$1 at spot pricing) and a **medium budget** (≈2 hours on a single A100, ~$4) — so the cost-vs-accuracy curves are directly comparable. A single H100 is an acceptable substitute for either; same dollar envelope, ~2× faster wall-clock.
+
+The combined ten-run comparison should fit comfortably under **$25 total spend**, matching the llm.c GPT-2 124M reproduction spirit ($20 on 8×A100 for 90 minutes). The arithmetic justifying this target:
+
+- Qwen 0.5B post-training data is GSM8K + MATH train ≈ 15K examples, several orders of magnitude smaller than the 10B FineWeb tokens used by llm.c.
+- 3K SFT optimizer steps at batch 32, seq 512 ≈ 50M training tokens — ~25–30 minutes on a single A100 at ~30K tokens/sec.
+- Initial rollout (K=4, ~5K prompts, ~512 output tokens) ≈ 10M output tokens — ~30 minutes on A100 with batched inference.
+- Adaptive rollout (K_extra=12 on ~30% ambiguous) ≈ 9M output tokens — another ~30 minutes.
+
+If the actual cost ledger from Stage 1 reports numbers materially above this envelope (>$5 per method at the medium budget), pause and root-cause before scaling up.
 
 ### Stage 6 — Cost ledger and writeup
 
@@ -226,7 +235,7 @@ These are durable rules that apply to every experiment in this workstream:
 3. **Separate rollout from training.** Rollouts may run on cheaper or quantized inference. Training runs in bf16 full-precision. Document the rollout precision in the cost ledger so accuracy regressions from quantized rollout are detectable.
 4. **Cheapest verifier first.** Exact parser → symbolic / numeric → small local model. LLM-as-judge is disallowed for numerical correctness; it is permitted only for the explanation-faithfulness check used downstream by Phase 2 filings.
 5. **Cost as a first-class metric.** Every method comparison reports `accuracy / $` and `accuracy / GPU-hour` alongside accuracy. A method that wins on accuracy but loses on `accuracy / $` at the medium budget is described as such in the writeup and is not allowed to be the headline result without explicit justification.
-6. **Larger remote GPUs are allowed when they reduce `$ / experiment`.** A single A10 or A100 spot hour may be cheaper per experiment than four T4 hours and produce results faster. The cost-gate checklist captures the decision per run.
+6. **Default GPU is a single A100 or H100 spot instance.** Post-training Qwen 0.5B on ≈15K math examples has several orders of magnitude less data than the 10B-token pretraining runs that finish in 10–90 minutes on these GPUs; a slower or smaller GPU would only inflate cost per experiment. The cost-gate checklist captures the per-run choice between A100 and H100; T4 / Colab is permitted only for sanity-check runs under 5 minutes where queue time would otherwise dominate.
 
 ## Decisions resolved by this workstream
 
@@ -234,8 +243,13 @@ These are durable rules that apply to every experiment in this workstream:
 
 ## Open questions
 
-- The exact `train_weight` schedule for the bucket-weighted arm. Default `{easy: 0.25, ambiguous: 1.0, hard: 0.5}`; an early sub-issue under this workstream will sweep one alternative schedule to confirm the default.
-- Whether the medium-budget run should target a single A10 / L4 spot hour or four T4 hours. The cost-gate checklist captures the per-run decision once the rollout cost from Stage 1 is in hand.
+- **TODO: think about the `train_weight` schedule.** No strong prior yet. Default `{easy: 0.25, ambiguous: 1.0, hard: 0.5}` is a placeholder chosen to embody the qualitative claim "spend dense supervision where the model is uncertain". Alternatives worth considering before locking it in:
+  - Continuous weight as a function of `p_correct` rather than a three-step bucket (e.g. `train_weight = 1 - |2 * p_correct - 1|`, a triangle peaking at `p_correct = 0.5`).
+  - Asymmetric weighting that penalises hard prompts more than easy ones (e.g. `{easy: 0.25, ambiguous: 1.0, hard: 0.0}`), on the hypothesis that hard prompts inject noise rather than signal.
+  - Bucket-count-balanced weighting that scales weights to equalise total contribution per bucket.
+
+  Resolve before Stage 5 launches.
+- Whether to default to A100 or H100. Both fit the dollar envelope; H100 halves wall-clock. Decide after the Stage 0 SFT run reports actual tokens/sec on each. Default A100 until then.
 - Whether the rollout precision should be `bf16` or `int8` quantized. Decided after Stage 1 reports actual rollout wall-clock on the chosen GPU; default `bf16` until evidence justifies the change.
 
 ## Notes

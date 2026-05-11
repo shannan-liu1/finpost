@@ -4,7 +4,7 @@
 - **Created:** 2026-05-09
 - **Owner:** Shannan
 - **Estimated time:** ~1 week after Phase 1 SFT trainer lands
-- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md), [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md)
+- **Depends on:** [`phase1-sft-trainer`](../phase1-sft-trainer/PRD.md)
 
 ## Goal
 
@@ -57,16 +57,25 @@ tests/test_preference_data.py
 
 ## Notes / open questions
 
-- Open decision Q-B from `PLAN.md` lives here: how to handle prompts where all sampled completions are correct or all are incorrect. **Resolved 2026-05-11 by Phase 1.5 Stage 3 (preference-pair builder): all-correct and all-incorrect prompts contribute zero pairs.**
-- This workstream now reuses the rollout cache, verifier, and preference-pair dataset produced by [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md). The "build preference pairs" issue in this workstream becomes a consumption-side issue: load the Phase 1.5 dataset, confirm bucket metadata is intact, and run the comparison.
-- DPO should not start until the SFT checkpoint is real and Phase 1.5 Stage 3 has emitted a preference dataset. Otherwise there is no meaningful policy model to improve and no on-policy preference data to compare offline DPO against.
+- Open decision Q-B from `PLAN.md` ("how to handle prompts where all sampled completions are correct or all are incorrect") is resolved by construction in this workstream's preference-pair builder: prompts with all-correct or all-incorrect samples contribute zero pairs and are tracked separately as a model-quality signal. The Phase 1.5 builder applies the same rule independently.
+- DPO should not start until the SFT checkpoint is real. Otherwise there is no meaningful policy model to improve.
 
-## Amendment 2026-05-11 — preference data sourced from Phase 1.5
+## Amendment 2026-05-11 — DPO stays offline; OPD stays on-policy
 
-The original deliverable list for this workstream included `scripts/build_dpo_pairs.py` and `src/finpost/training/preference_data.py`. These are superseded by the Phase 1.5 rollout, verifier, bucketing, and preference-pair modules under `src/finpost/postraining/`. This workstream now owns:
+This workstream and [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md) deliberately use **separate** preference-pair pipelines. The split is itself a comparison axis:
 
-- the DPO loss implementation (`src/finpost/training/dpo.py`),
-- the numerical parity test against the Phase 1.5 OPD loss on uniform inputs,
-- the Base vs. SFT vs. SFT+DPO vs. SFT+OPD comparison report.
+- DPO uses a **fixed offline preference dataset**: sample N=8 completions per held-out training prompt from the SFT-best checkpoint **once**, grade with the same verifier ladder Phase 1.5 uses, build pairs once, and train DPO against that frozen dataset.
+- OPD uses an **on-policy** preference dataset: rollouts are sampled fresh from the current training policy at each scheduled refresh, with adaptive K on ambiguous prompts.
 
-The comparison adds **SFT+OPD** as a fourth arm so that offline DPO and On-Policy Distillation can be measured on the same evaluation surface. Whether they should remain separate workstreams or be merged is a decision deferred until both have produced a first result.
+Both pipelines share:
+- the verifier ladder under `src/finpost/postraining/verifier.py`,
+- the DPO-style pairwise loss math (per-example loss must match within `1e-5` on uniform inputs — the parity test lives here).
+
+Each pipeline owns its own:
+- rollout cache,
+- preference-pair builder,
+- training driver.
+
+The combined Phase 1 evaluation surface then has at least four arms — Base, SFT, SFT+DPO (this workstream), SFT+OPD (Phase 1.5) — measured on the same harness. A merged "preference-pair builder" abstraction is explicitly deferred until both pipelines have produced a first result; merging earlier would collapse the offline-vs-on-policy distinction.
+
+Deliverables restored: `scripts/build_dpo_pairs.py` and `src/finpost/training/preference_data.py` belong to this workstream.

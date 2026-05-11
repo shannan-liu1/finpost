@@ -22,7 +22,8 @@ Run the five-method comparison at two preset budgets (small and medium) and prod
 
 **In scope:**
 - One config per method under `experiments/compute_aware/`.
-- One small-budget run (target: 1 T4-hour equivalent) and one medium-budget run (target: 4 T4-hours or 1 A10-hour equivalent) per method.
+- One **small-budget** run (≈30 min on a single A100, ~$1) and one **medium-budget** run (≈2 hours on a single A100, ~$4) per method. H100 is an acceptable substitute for either; same dollar envelope, ~2× faster wall-clock.
+- Combined ten-run total spend target: **< $25**, matching the llm.c GPT-2 124M reproduction envelope.
 - Eval at the end of every run on the held-out GSM8K and MATH test sets, plus pass@4.
 - All evaluation uses the same harness as Phase 1 SFT.
 

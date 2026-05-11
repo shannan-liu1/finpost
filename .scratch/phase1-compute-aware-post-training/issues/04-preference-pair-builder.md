@@ -15,7 +15,7 @@ From a verified rollout cache and bucket assignment, emit a preference dataset w
 **In scope:**
 - `src/finpost/postraining/preference.py`.
 - Configurable pair policy: `all_pairs`, `best_vs_worst`, `one_random_pair_per_prompt`.
-- Default `train_weight` schedule: `{easy: 0.25, ambiguous: 1.0, hard: 0.5}` — overridable in config.
+- Default `train_weight` schedule: `{easy: 0.25, ambiguous: 1.0, hard: 0.5}` — overridable in config. **TODO: think about this schedule before Stage 5 launches.** No strong prior. Alternatives: continuous weight `1 - |2 * p_correct - 1|`; asymmetric `{easy: 0.25, ambiguous: 1.0, hard: 0.0}`; bucket-count-balanced.
 - Reproducibility: deterministic pair selection given the same `(rollout_cache_hash, pair_policy, seed)`.
 - The same dataset shape is reusable by [`phase1-dpo-comparison`](../../phase1-dpo-comparison/PRD.md) as its preference dataset.
 

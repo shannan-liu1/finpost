@@ -82,12 +82,12 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
 
 ### 1.4 Direct Preference Optimization preparation
 
-Preference-pair construction for DPO is now produced as a by-product of the Phase 1.5 rollout/verifier pipeline (see "Phase 1.5 — Compute-aware post-training" below). The DPO workstream consumes that dataset rather than running its own rollout. The decision Q-B (all-correct / all-incorrect prompts) is resolved by construction in Phase 1.5 Stage 3: those prompts produce zero preference pairs and are bucketed for separate handling.
+DPO keeps its **own fixed offline** preference-pair pipeline, deliberately separate from the Phase 1.5 on-policy rollout pipeline. The two pipelines share the verifier ladder and the pairwise-loss math; they do not share data. The split lets us measure offline DPO against on-policy On-Policy Distillation as two distinct training regimes on the same evaluation surface. Decision Q-B (all-correct / all-incorrect prompts) is resolved by construction in both pipelines independently: such prompts contribute zero pairs and are tracked separately as a model-quality signal.
 
-- [ ] From the best SFT checkpoint, sample N=8 completions per prompt at temperature 0.8 over a held-out set of training prompts (not test). Done via Phase 1.5 Stage 1+2.
-- [ ] Programmatically grade each completion (final-answer match). Done via Phase 1.5 Stage 3 verifier.
-- [ ] Form preference pairs via Phase 1.5 Stage 3 preference-pair builder.
-- [ ] Target: ~5,000 preference pairs (revisit after Phase 1.5 rollouts land; the bucket distribution will change the achievable count).
+- [ ] From the best SFT checkpoint, sample N=8 completions per prompt at temperature 0.8 over a held-out set of training prompts (not test). DPO does this **once**; the dataset is frozen for the run.
+- [ ] Programmatically grade each completion (final-answer match) using the shared verifier ladder under `src/finpost/postraining/verifier.py`.
+- [ ] Form preference pairs using this workstream's own builder.
+- [ ] Target: ~5,000 preference pairs.
 
 ### 1.5 Direct Preference Optimization implementation (from scratch, no TRL trainer)
 
@@ -151,7 +151,7 @@ Full scope, acceptance criteria, and stage-sliced issues live in [`.scratch/phas
 - Separate rollout from training. Rollouts may run on cheaper or quantized inference; training runs in bf16 full precision; the cost ledger records both.
 - Cheapest verifier first: exact parser → symbolic / numeric → small local model. LLM-as-judge is disallowed for numerical correctness.
 - Cost as a first-class metric. Every comparison reports `accuracy / $` and `accuracy / GPU-hour` alongside accuracy.
-- Larger remote GPUs are allowed when they reduce `$ / experiment`. A single A10 / L4 / A100 spot hour may be cheaper per experiment than four T4 hours and produce faster results. The cost-gate checklist captures the decision per run.
+- Default GPU is a single A100 or H100 spot instance. Post-training Qwen 0.5B on ≈15K math examples has orders of magnitude less data than the 10B-token pretraining runs that finish in 10–90 minutes on these GPUs (cf. llm.c GPT-2 124M, ~90 min on 8×A100, ~$20). The cost-gate checklist captures the per-run choice between A100 and H100; T4 / Colab is permitted only for sub-5-minute sanity-check runs. Total spend target for the headline ten-run comparison: < $25.
 
 **Decisions resolved by Phase 1.5:**
 
