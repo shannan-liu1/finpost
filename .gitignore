@@ -62,4 +62,5 @@ secrets/
 # happen to live there but aren't workstreams.
 STUDY.md
 STUDY.html
+RUNPOD_RUNBOOK.html
 .scratch/hatch-pet/
