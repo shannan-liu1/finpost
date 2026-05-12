@@ -22,7 +22,8 @@ List of rows, one per (checkpoint, source) pair.
 | `n` | int | Number of examples evaluated |
 | `accuracy` | float | Fraction of examples scored correct |
 | `parse_success_rate` | float | Fraction where the answer parser extracted a number |
-| `generated_tokens` | int | Total new tokens generated for this (ckpt, src) pair |
+| `generated_tokens` | int | Rectangular position count (compute): `batch_size × new_token_cols` including pad fill after early-stop. Use as the denominator for compute cost. |
+| `generated_tokens_decoded` | int | Non-pad token count (content length): positions whose id is not `pad_token_id`. Diverges from `generated_tokens` when sequences finish at different steps. Use as the denominator for content-rate metrics. |
 | `elapsed_sec` | float | Wall-clock seconds for this source only |
 
 ### `details_<checkpoint>_<source>.csv`
@@ -69,8 +70,9 @@ Timing and cost record for the full run.
 | `generation_seconds` | float | Time spent inside `model.generate()` across all calls |
 | `gpu_type` | str | Friendly GPU name (same as `run_metadata.device`) |
 | `dtype` | str | Torch dtype string |
-| `generated_tokens` | int | Total new tokens produced across all sources and checkpoints |
-| `tokens_per_second` | float | `generated_tokens / generation_seconds` (true throughput) |
+| `generated_tokens` | int | Total rectangular position count (compute) across all sources and checkpoints |
+| `generated_tokens_decoded` | int | Total non-pad token count (content length) across all sources and checkpoints |
+| `tokens_per_second` | float | `generated_tokens / generation_seconds` (rectangular throughput; reflects real forward passes) |
 | `estimated_cost_usd` | float or null | Dollar cost if `--gpu-cost-per-hour` was supplied |
 
 ---

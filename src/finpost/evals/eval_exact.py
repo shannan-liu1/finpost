@@ -187,6 +187,7 @@ class RunTracker:
         self.elapsed_sec: float = 0.0
         self.gpu_type: str = "CPU"
         self.total_generated_tokens: int = 0
+        self.total_decoded_tokens: int = 0
         self._start_monotonic: float = 0.0
 
     def __enter__(self) -> RunTracker:
@@ -206,8 +207,12 @@ class RunTracker:
         self.elapsed_sec = time.monotonic() - self._start_monotonic
 
     def add_generated_tokens(self, n: int) -> None:
-        """Accumulate generated token count across all batches and sources."""
+        """Accumulate rectangular position count across all batches and sources."""
         self.total_generated_tokens += n
+
+    def add_decoded_tokens(self, n: int) -> None:
+        """Accumulate non-pad token count (content length) across all batches."""
+        self.total_decoded_tokens += n
 
 
 # =============================================================================
@@ -272,7 +277,7 @@ def _generate_batch(
     batch_size: int,
     max_new_tokens: int,
     device: str,
-) -> tuple[list[str], int, float]:
+) -> tuple[list[str], int, int, float]:
     """Generate continuations for ``prompts`` in batches.
 
     Processes ``prompts`` in chunks of at most ``batch_size``. On
@@ -303,15 +308,15 @@ def _generate_batch(
 
     Returns
     -------
-    A tuple of (generated_texts, total_new_tokens, generation_seconds)
-    where generated_texts is a list of decoded new-token strings (one
-    per prompt), total_new_tokens is the number of new token positions
-    generated (counted from the output tensor shape, not from a
-    re-encode round-trip), and generation_seconds is the total time
-    spent inside ``model.generate()`` across all chunks.
+    A tuple of (generated_texts, total_new_tokens, non_pad_tokens,
+    generation_seconds). ``total_new_tokens`` is the rectangular
+    position count (compute); ``non_pad_tokens`` is the count of
+    positions whose id is not ``pad_token_id`` (content length). See
+    ``_tokenize_and_generate`` for the full distinction.
     """
     all_generated: list[str] = []
     total_tokens: int = 0
+    total_non_pad: int = 0
     total_gen_sec: float = 0.0
 
     # Walk through all prompts in chunks of ``current_batch_size``.
@@ -322,7 +327,13 @@ def _generate_batch(
     current_batch_size = batch_size
     while i < len(prompts):
         chunk = prompts[i : i + current_batch_size]
-        generated, chunk_tokens, current_batch_size, chunk_gen_sec = _generate_chunk_with_oom_fallback(
+        (
+            generated,
+            chunk_tokens,
+            chunk_non_pad,
+            current_batch_size,
+            chunk_gen_sec,
+        ) = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=chunk,
@@ -332,10 +343,11 @@ def _generate_batch(
         )
         all_generated.extend(generated)
         total_tokens += chunk_tokens
+        total_non_pad += chunk_non_pad
         total_gen_sec += chunk_gen_sec
         i += len(chunk)
 
-    return all_generated, total_tokens, total_gen_sec
+    return all_generated, total_tokens, total_non_pad, total_gen_sec
 
 
 def _generate_chunk_with_oom_fallback(
@@ -345,7 +357,7 @@ def _generate_chunk_with_oom_fallback(
     batch_size: int,
     max_new_tokens: int,
     device: str,
-) -> tuple[list[str], int, int, float]:
+) -> tuple[list[str], int, int, int, float]:
     """Generate a single chunk, halving batch size on OOM.
 
     Recursively halves ``batch_size`` and splits the chunk in two until
@@ -362,11 +374,14 @@ def _generate_chunk_with_oom_fallback(
 
     Returns
     -------
-    A tuple of (generated_texts, total_new_tokens, effective_batch_size,
-    generation_seconds).
-    ``effective_batch_size`` is the smallest batch size that actually
-    succeeded; the outer loop in ``_generate_batch`` carries this
-    forward so subsequent chunks start at the reduced size.
+    A tuple of (generated_texts, total_new_tokens, non_pad_tokens,
+    effective_batch_size, generation_seconds).
+    ``total_new_tokens`` is the rectangular position count;
+    ``non_pad_tokens`` is the content-length count (positions whose id
+    is not pad_token_id) — see ``_tokenize_and_generate`` for the full
+    distinction. ``effective_batch_size`` is the smallest batch size
+    that actually succeeded; the outer loop in ``_generate_batch``
+    carries this forward so subsequent chunks start at the reduced size.
     ``generation_seconds`` is the total time spent inside
     ``model.generate()`` for this chunk (summed across recursive halves).
 
@@ -380,17 +395,17 @@ def _generate_chunk_with_oom_fallback(
     # Without this check _tokenize_and_generate would crash, and the zip
     # in _evaluate_one_source would produce a length-mismatch error.
     if not prompts:
-        return [], 0, batch_size, 0.0
+        return [], 0, 0, batch_size, 0.0
 
     try:
-        texts, token_count, gen_sec = _tokenize_and_generate(
+        texts, token_count, non_pad_count, gen_sec = _tokenize_and_generate(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts,
             max_new_tokens=max_new_tokens,
             device=device,
         )
-        return texts, token_count, batch_size, gen_sec
+        return texts, token_count, non_pad_count, batch_size, gen_sec
     except torch.cuda.OutOfMemoryError:
         if batch_size <= 1:
             # Can't go smaller. Fail loudly — the caller asked for this
@@ -416,7 +431,7 @@ def _generate_chunk_with_oom_fallback(
 
         # Split the chunk into two halves and recurse on each.
         mid = len(prompts) // 2 if len(prompts) > 1 else 1
-        left_texts, left_tokens, left_bs, left_gen_sec = _generate_chunk_with_oom_fallback(
+        left = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts[:mid],
@@ -424,7 +439,7 @@ def _generate_chunk_with_oom_fallback(
             max_new_tokens=max_new_tokens,
             device=device,
         )
-        right_texts, right_tokens, right_bs, right_gen_sec = _generate_chunk_with_oom_fallback(
+        right = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts[mid:],
@@ -432,11 +447,19 @@ def _generate_chunk_with_oom_fallback(
             max_new_tokens=max_new_tokens,
             device=device,
         )
+        left_texts, left_tokens, left_non_pad, left_bs, left_gen_sec = left
+        right_texts, right_tokens, right_non_pad, right_bs, right_gen_sec = right
         # Return the minimum effective batch size so the outer loop can
         # carry it forward to prevent re-triggering OOM on later chunks.
         effective_bs = min(left_bs, right_bs)
         total_gen_sec = left_gen_sec + right_gen_sec
-        return left_texts + right_texts, left_tokens + right_tokens, effective_bs, total_gen_sec
+        return (
+            left_texts + right_texts,
+            left_tokens + right_tokens,
+            left_non_pad + right_non_pad,
+            effective_bs,
+            total_gen_sec,
+        )
 
 
 def _tokenize_and_generate(
@@ -445,7 +468,7 @@ def _tokenize_and_generate(
     prompts: list[str],
     max_new_tokens: int,
     device: str,
-) -> tuple[list[str], int, float]:
+) -> tuple[list[str], int, int, float]:
     """Tokenize a batch of prompts, generate, decode only the new tokens.
 
     This is the inner loop that does the actual HuggingFace model call.
@@ -467,18 +490,19 @@ def _tokenize_and_generate(
 
     Returns
     -------
-    A tuple of (generated_texts, total_new_tokens, generation_seconds).
-    ``generated_texts`` is a list of decoded new-token strings, one per
-    prompt. ``total_new_tokens`` is the total number of new token
-    positions in the output tensor (batch_size * new_token_cols), which
-    counts every position including trailing EOS/pad tokens. This
-    reflects the actual compute spent: model.generate runs all decode
-    steps until every sequence in the batch has finished, so trailing
-    positions are real forward passes. Counting from the tensor shape
-    avoids the under-count that a decode->encode round-trip produces
-    (EOS is stripped by skip_special_tokens, so re-encoding drops it).
-    ``generation_seconds`` is the wall-clock time spent inside
-    ``model.generate()`` only — excludes tokenization and decode overhead.
+    A tuple of (generated_texts, total_new_tokens, non_pad_tokens,
+    generation_seconds). ``generated_texts`` is a list of decoded
+    new-token strings, one per prompt. ``total_new_tokens`` is the
+    rectangular position count (batch_size * new_token_cols) including
+    trailing pad fill for sequences that hit EOS early — this reflects
+    the compute spent because model.generate runs all decode steps
+    until every sequence in the batch finishes. ``non_pad_tokens`` is
+    the count of positions whose token id is not ``pad_token_id``; it
+    approximates the meaningful output length and is reported alongside
+    ``total_new_tokens`` so cost-per-token consumers can distinguish
+    rectangular compute from emitted content. ``generation_seconds`` is
+    the wall-clock time spent inside ``model.generate()`` only —
+    excludes tokenization and decode overhead.
     """
     # Tokenize with left-padding to the longest prompt in this batch.
     encoding = tokenizer(
@@ -516,12 +540,24 @@ def _tokenize_and_generate(
     # sequences in the batch finish, not until any single one does).
     total_new_tokens = new_token_ids.numel()
 
+    # Non-pad count: approximates the meaningful output length per the
+    # MEDIUM 7 fix. Sequences that hit EOS early have their trailing
+    # positions filled with pad_token_id by HuggingFace's generate(),
+    # which the rectangular count above includes but a content-length
+    # measure should not. When pad_token_id is None there is no pad
+    # concept, so the rectangular count is the only available count.
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        non_pad_tokens = total_new_tokens
+    else:
+        non_pad_tokens = int((new_token_ids != pad_id).sum().item())
+
     # Decode each row separately. skip_special_tokens=True strips pad/eos.
     generated_texts = [
         tokenizer.decode(row, skip_special_tokens=True)
         for row in new_token_ids
     ]
-    return generated_texts, total_new_tokens, generation_seconds
+    return generated_texts, total_new_tokens, non_pad_tokens, generation_seconds
 
 
 # =============================================================================
@@ -537,7 +573,7 @@ def _write_accuracy_summary(
 
     Each row in ``rows`` must have the keys:
       checkpoint, source, n, accuracy, parse_success_rate,
-      generated_tokens, elapsed_sec.
+      generated_tokens, generated_tokens_decoded, elapsed_sec.
 
     Parameters
     ----------
@@ -554,6 +590,7 @@ def _write_accuracy_summary(
         "accuracy",
         "parse_success_rate",
         "generated_tokens",
+        "generated_tokens_decoded",
         "elapsed_sec",
     ]
 
@@ -627,6 +664,7 @@ def _write_cost_summary(
     gpu_type: str,
     dtype: str,
     generated_tokens: int,
+    generated_tokens_decoded: int,
     tokens_per_second: float,
     estimated_cost_usd: float | None,
 ) -> None:
@@ -652,10 +690,18 @@ def _write_cost_summary(
     dtype
         Torch dtype string (e.g. ``"torch.bfloat16"``).
     generated_tokens
-        Total new tokens produced across all sources.
+        Total new token positions across all sources — rectangular count
+        including trailing pad fill for sequences that hit EOS early. This
+        is the compute cost (real forward passes per position).
+    generated_tokens_decoded
+        Total non-pad token count across all sources — approximates the
+        meaningful output length the models actually emitted. Reported
+        alongside ``generated_tokens`` because the two diverge when
+        sequences in a batch finish at different steps.
     tokens_per_second
         Throughput computed as ``generated_tokens / generation_seconds``
         (not divided by ``elapsed_sec`` to avoid penalising model load time).
+        Uses the rectangular count because that is the actual compute.
     estimated_cost_usd
         Dollar cost if ``--gpu-cost-per-hour`` was supplied, else ``None``.
     """
@@ -668,6 +714,7 @@ def _write_cost_summary(
         "gpu_type": gpu_type,
         "dtype": dtype,
         "generated_tokens": generated_tokens,
+        "generated_tokens_decoded": generated_tokens_decoded,
         "tokens_per_second": tokens_per_second,
         "estimated_cost_usd": estimated_cost_usd,
     }
@@ -888,7 +935,7 @@ def _evaluate_one_source(
     examples: list[Any],
     batch_size: int,
     device: str,
-) -> tuple[list[dict[str, Any]], int, float]:
+) -> tuple[list[dict[str, Any]], int, int, float]:
     """Run generation + scoring for one (model, source) pair.
 
     Parameters
@@ -906,17 +953,23 @@ def _evaluate_one_source(
 
     Returns
     -------
-    (detail_rows, total_new_tokens, generation_seconds)
+    (detail_rows, total_new_tokens, non_pad_tokens, generation_seconds)
         ``detail_rows`` is a list of per-example dicts ready to write to CSV.
-        ``total_new_tokens`` is the count of newly generated tokens.
-        ``generation_seconds`` is the total time spent inside
-        ``model.generate()`` for this source.
+        ``total_new_tokens`` is the rectangular position count (compute).
+        ``non_pad_tokens`` is the count of positions whose id is not
+        ``pad_token_id`` (content length). ``generation_seconds`` is
+        the total time spent inside ``model.generate()`` for this source.
     """
     prompts = [ex.prompt for ex in examples]
 
     # Generate all continuations for this source in one batched call.
     # _generate_batch handles the chunking, OOM fallback, and token counting.
-    generated_texts, total_new_tokens, generation_seconds = _generate_batch(
+    (
+        generated_texts,
+        total_new_tokens,
+        non_pad_tokens,
+        generation_seconds,
+    ) = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -942,7 +995,7 @@ def _evaluate_one_source(
             "is_correct": is_correct,
         })
 
-    return detail_rows, total_new_tokens, generation_seconds
+    return detail_rows, total_new_tokens, non_pad_tokens, generation_seconds
 
 
 # =============================================================================
@@ -1115,7 +1168,12 @@ def run_eval(
                 )
 
                 t0 = time.monotonic()
-                detail_rows, new_tokens, source_gen_sec = _evaluate_one_source(
+                (
+                    detail_rows,
+                    new_tokens,
+                    new_tokens_decoded,
+                    source_gen_sec,
+                ) = _evaluate_one_source(
                     model=model,
                     tokenizer=tokenizer,
                     source=source,
@@ -1126,6 +1184,7 @@ def run_eval(
                 elapsed = time.monotonic() - t0
 
                 tracker.add_generated_tokens(new_tokens)
+                tracker.add_decoded_tokens(new_tokens_decoded)
                 total_generation_seconds += source_gen_sec
 
                 # Compute aggregate metrics.
@@ -1138,6 +1197,7 @@ def run_eval(
                 print(
                     f"    accuracy={accuracy:.3f}  parse_success_rate={parse_success_rate:.3f}"
                     f"  elapsed={elapsed:.1f}s  tokens={new_tokens}"
+                    f"  decoded={new_tokens_decoded}"
                 )
 
                 # Write per-example details CSV.
@@ -1148,7 +1208,12 @@ def run_eval(
                     out_dir=out_dir,
                 )
 
-                # Accumulate for the summary files.
+                # Accumulate for the summary files. ``generated_tokens`` is the
+                # rectangular position count (real forward passes / compute);
+                # ``generated_tokens_decoded`` is the non-pad content-length
+                # count. Both are reported so cost-per-token consumers can pick
+                # the appropriate denominator (positions for compute cost,
+                # decoded for content rate).
                 summary_rows.append({
                     "checkpoint": ckpt_name,
                     "source": source.name,
@@ -1156,6 +1221,7 @@ def run_eval(
                     "accuracy": accuracy,
                     "parse_success_rate": parse_success_rate,
                     "generated_tokens": new_tokens,
+                    "generated_tokens_decoded": new_tokens_decoded,
                     "elapsed_sec": round(elapsed, 3),
                 })
 
@@ -1195,6 +1261,7 @@ def run_eval(
         gpu_type=tracker.gpu_type,
         dtype=dtype_str,
         generated_tokens=tracker.total_generated_tokens,
+        generated_tokens_decoded=tracker.total_decoded_tokens,
         tokens_per_second=tokens_per_second,
         estimated_cost_usd=estimated_cost_usd,
     )

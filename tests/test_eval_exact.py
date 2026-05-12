@@ -155,8 +155,8 @@ def test_batched_vs_single_generation_parity() -> None:
     max_new_tokens = 16
 
     # Generate both prompts together in a single batch.
-    # _generate_batch returns (texts, token_count, generation_seconds).
-    batch_texts, _batch_tokens, _batch_gen_sec = _generate_batch(
+    # _generate_batch returns (texts, token_count, non_pad_tokens, generation_seconds).
+    batch_texts, _batch_tokens, _batch_non_pad, _batch_gen_sec = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -235,8 +235,8 @@ def test_oom_fallback_halves_and_retries() -> None:
     prompts = ["What is 1 + 1?", "What is 2 + 2?"]
     # With batch_size=2, the first call OOMs. The fallback retries at
     # batch_size=1, which succeeds.
-    # _generate_batch returns (texts, token_count, generation_seconds).
-    texts, _token_count, _gen_sec = _generate_batch(
+    # _generate_batch returns (texts, token_count, non_pad_tokens, generation_seconds).
+    texts, _token_count, _non_pad, _gen_sec = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -290,6 +290,7 @@ _EXPECTED_SUMMARY_COLUMNS = {
     "accuracy",
     "parse_success_rate",
     "generated_tokens",
+    "generated_tokens_decoded",
     "elapsed_sec",
 }
 
@@ -312,6 +313,7 @@ _EXPECTED_COST_FIELDS = {
     "gpu_type",
     "dtype",
     "generated_tokens",
+    "generated_tokens_decoded",
     "tokens_per_second",
     "estimated_cost_usd",
 }
@@ -340,6 +342,7 @@ def test_accuracy_summary_csv_has_required_columns(tmp_path: Path) -> None:
             "accuracy": 0.25,
             "parse_success_rate": 0.5,
             "generated_tokens": 100,
+            "generated_tokens_decoded": 80,
             "elapsed_sec": 3.2,
         }
     ]
@@ -368,6 +371,7 @@ def test_accuracy_summary_json_has_required_fields(tmp_path: Path) -> None:
             "accuracy": 0.0,
             "parse_success_rate": 0.0,
             "generated_tokens": 80,
+            "generated_tokens_decoded": 64,
             "elapsed_sec": 2.1,
         }
     ]
@@ -458,6 +462,7 @@ def test_cost_summary_json_has_required_fields(tmp_path: Path) -> None:
         gpu_type="CPU",
         dtype="float32",
         generated_tokens=500,
+        generated_tokens_decoded=420,
         tokens_per_second=500 / 55.0,
         estimated_cost_usd=None,
     )
@@ -481,6 +486,7 @@ def test_cost_summary_estimated_cost_null_when_not_supplied(tmp_path: Path) -> N
         gpu_type="CPU",
         dtype="float32",
         generated_tokens=50,
+        generated_tokens_decoded=40,
         tokens_per_second=50 / 9.0,
         estimated_cost_usd=None,
     )
@@ -502,6 +508,7 @@ def test_cost_summary_estimated_cost_populated_when_supplied(tmp_path: Path) -> 
         gpu_type="Tesla T4",
         dtype="bfloat16",
         generated_tokens=10000,
+        generated_tokens_decoded=8500,
         tokens_per_second=10000 / 3550.0,
         estimated_cost_usd=1.39,
     )
@@ -736,10 +743,10 @@ def test_generate_chunk_empty_prompts_returns_empty() -> None:
         device="cpu",
     )
 
-    # Must return ([], 0, 4, 0.0) — texts empty, zero tokens, batch_size
-    # unchanged, zero generation seconds.
-    assert result == ([], 0, 4, 0.0), (
-        f"Expected ([], 0, 4, 0.0) for empty prompts, got {result!r}"
+    # Must return ([], 0, 0, 4, 0.0) — texts empty, zero rectangular tokens,
+    # zero non-pad tokens, batch_size unchanged, zero generation seconds.
+    assert result == ([], 0, 0, 4, 0.0), (
+        f"Expected ([], 0, 0, 4, 0.0) for empty prompts, got {result!r}"
     )
 
 
@@ -766,7 +773,7 @@ def test_generate_chunk_oom_on_single_prompt_at_batch_size_gt_1_recovers() -> No
 
     model.generate = oom_once  # type: ignore[method-assign]
 
-    texts, token_count, effective_bs, gen_sec = _generate_chunk_with_oom_fallback(
+    texts, token_count, non_pad_count, effective_bs, gen_sec = _generate_chunk_with_oom_fallback(
         model=model,
         tokenizer=tokenizer,
         prompts=["What is 1 + 1?"],
@@ -778,6 +785,12 @@ def test_generate_chunk_oom_on_single_prompt_at_batch_size_gt_1_recovers() -> No
     # Must return exactly one text and a positive token count.
     assert len(texts) == 1, f"Expected 1 text, got {len(texts)}"
     assert token_count > 0, "token_count should be > 0 after successful generation"
+    # non_pad_count must not exceed the rectangular token_count, and should
+    # be positive whenever generation actually emitted content.
+    assert 0 < non_pad_count <= token_count, (
+        f"non_pad_count={non_pad_count} must satisfy 0 < non_pad_count <= "
+        f"token_count={token_count}"
+    )
     # effective_bs should be 1 (the halved size that actually succeeded).
     assert effective_bs == 1, f"Expected effective_bs=1, got {effective_bs}"
     # gen_sec should be a non-negative float.

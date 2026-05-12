@@ -115,6 +115,11 @@ import json, sys
 d = json.load(open('results/evals/smoke_tiny_gpt2/cost_summary.json'))
 assert d['elapsed_sec'] > 0, f'elapsed_sec is {d[\"elapsed_sec\"]}, expected > 0'
 assert d['generated_tokens'] > 0, f'generated_tokens is {d[\"generated_tokens\"]}, expected > 0'
+assert d['generated_tokens_decoded'] > 0, f'generated_tokens_decoded is {d[\"generated_tokens_decoded\"]}, expected > 0'
+assert d['generated_tokens_decoded'] <= d['generated_tokens'], (
+    f\"generated_tokens_decoded={d['generated_tokens_decoded']} must be \"
+    f\"<= generated_tokens={d['generated_tokens']} (decoded is a subset)\"
+)
 assert d['tokens_per_second'] > 0, f'tokens_per_second is {d[\"tokens_per_second\"]}, expected > 0'
 assert d['estimated_cost_usd'] is None, f'estimated_cost_usd is {d[\"estimated_cost_usd\"]}, expected None'
 "
