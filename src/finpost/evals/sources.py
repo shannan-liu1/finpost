@@ -15,6 +15,21 @@ from finpost.data.gsm8k import load_gsm8k
 from finpost.data.math_dataset import load_math
 from finpost.data.schema import Example
 
+# =============================================================================
+# Module-level counter for _strip_string normalization failures (RB1).
+#
+# score_math increments this counter whenever _strip_string raises inside the
+# try/except block.  run_eval in eval_exact resets it at the start of each
+# invocation and prints a summary at the end so the operator knows if a
+# suspiciously low MATH accuracy is partly explained by normalization errors.
+#
+# A module-level int is intentional here: eval_exact is a single-process CLI,
+# there is no concurrency, and this avoids threading the counter through every
+# function signature in the generation/scoring stack.
+# =============================================================================
+
+_strip_string_failure_count: int = 0
+
 
 # =============================================================================
 # Vendored Hendrycks MATH LaTeX normalization helpers
@@ -385,6 +400,8 @@ def score_math(predicted: str | None, gold: str) -> bool:
     ``True`` if predicted and gold match under any of the three layers,
     ``False`` otherwise. Predicted ``None`` is always ``False``.
     """
+    global _strip_string_failure_count
+
     if predicted is None:
         return False
     if predicted == gold:
@@ -394,7 +411,13 @@ def score_math(predicted: str | None, gold: str) -> bool:
         if _strip_string(predicted) == _strip_string(gold):
             return True
     except Exception:
-        pass
+        # _strip_string can raise on pathological input — e.g., the bare
+        # assert in _remove_right_units (string with two \text{ markers) or
+        # an IndexError in _fix_sqrt (string ending in \sqrt).  Increment the
+        # module-level counter so the caller (run_eval) can report how many
+        # examples fell through to the direct equality / numeric fallback
+        # rather than the proper normalization path.
+        _strip_string_failure_count += 1
     # Numeric fallback: handles "42.0" vs "42", "4.2e3" vs "4200", etc.
     # LaTeX strings (e.g., \frac{1}{2}) won't parse as float and fall
     # through to False, which is correct.

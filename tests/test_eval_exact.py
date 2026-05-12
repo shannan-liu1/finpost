@@ -14,6 +14,7 @@ these tests verify infrastructure, not model quality.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 from pathlib import Path
@@ -30,6 +31,7 @@ from finpost.evals.eval_exact import (
     RunTracker,
     _generate_batch,
     _generate_chunk_with_oom_fallback,
+    _parse_checkpoint_pair,
     _sample_examples,
     _set_cuda_determinism,
     _write_accuracy_summary,
@@ -153,8 +155,8 @@ def test_batched_vs_single_generation_parity() -> None:
     max_new_tokens = 16
 
     # Generate both prompts together in a single batch.
-    # _generate_batch returns (texts, token_count); unpack accordingly.
-    batch_texts, _batch_tokens = _generate_batch(
+    # _generate_batch returns (texts, token_count, generation_seconds).
+    batch_texts, _batch_tokens, _batch_gen_sec = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -233,8 +235,8 @@ def test_oom_fallback_halves_and_retries() -> None:
     prompts = ["What is 1 + 1?", "What is 2 + 2?"]
     # With batch_size=2, the first call OOMs. The fallback retries at
     # batch_size=1, which succeeds.
-    # _generate_batch returns (texts, token_count).
-    texts, _token_count = _generate_batch(
+    # _generate_batch returns (texts, token_count, generation_seconds).
+    texts, _token_count, _gen_sec = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -737,9 +739,10 @@ def test_generate_chunk_empty_prompts_returns_empty() -> None:
         device="cpu",
     )
 
-    # Must return ([], 0, 4) — texts empty, zero tokens, batch_size unchanged.
-    assert result == ([], 0, 4), (
-        f"Expected ([], 0, 4) for empty prompts, got {result!r}"
+    # Must return ([], 0, 4, 0.0) — texts empty, zero tokens, batch_size
+    # unchanged, zero generation seconds.
+    assert result == ([], 0, 4, 0.0), (
+        f"Expected ([], 0, 4, 0.0) for empty prompts, got {result!r}"
     )
 
 
@@ -766,7 +769,7 @@ def test_generate_chunk_oom_on_single_prompt_at_batch_size_gt_1_recovers() -> No
 
     model.generate = oom_once  # type: ignore[method-assign]
 
-    texts, token_count, effective_bs = _generate_chunk_with_oom_fallback(
+    texts, token_count, effective_bs, gen_sec = _generate_chunk_with_oom_fallback(
         model=model,
         tokenizer=tokenizer,
         prompts=["What is 1 + 1?"],
@@ -780,3 +783,289 @@ def test_generate_chunk_oom_on_single_prompt_at_batch_size_gt_1_recovers() -> No
     assert token_count > 0, "token_count should be > 0 after successful generation"
     # effective_bs should be 1 (the halved size that actually succeeded).
     assert effective_bs == 1, f"Expected effective_bs=1, got {effective_bs}"
+    # gen_sec should be a non-negative float.
+    assert gen_sec >= 0.0, f"Expected gen_sec >= 0.0, got {gen_sec}"
+
+
+# =============================================================================
+# S1. Path-traversal guard on checkpoint names
+# =============================================================================
+#
+# The checkpoint name flows directly into the output filename
+# ``details_{name}_{source}.csv``.  Names containing path separators or ..
+# must be rejected at parse time, before any model loading.
+
+
+def test_parse_checkpoint_pair_valid_names_accepted() -> None:
+    """Well-formed names parse without error."""
+    assert _parse_checkpoint_pair("base=Qwen/Qwen2.5-0.5B") == ("base", "Qwen/Qwen2.5-0.5B")
+    assert _parse_checkpoint_pair("combined_step_1000=/tmp/ckpt") == (
+        "combined_step_1000",
+        "/tmp/ckpt",
+    )
+    assert _parse_checkpoint_pair("qwen-0.5b=sshleifer/tiny-gpt2") == (
+        "qwen-0.5b",
+        "sshleifer/tiny-gpt2",
+    )
+
+
+def test_parse_checkpoint_pair_dotdot_rejected() -> None:
+    """A name containing '..' raises ArgumentTypeError (path traversal guard)."""
+    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+        _parse_checkpoint_pair("../etc=sshleifer/tiny-gpt2")
+
+
+def test_parse_checkpoint_pair_forward_slash_in_name_rejected() -> None:
+    """A name containing '/' raises ArgumentTypeError."""
+    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+        _parse_checkpoint_pair("a/b=sshleifer/tiny-gpt2")
+
+
+def test_parse_checkpoint_pair_backslash_in_name_rejected() -> None:
+    r"""A name containing '\\' raises ArgumentTypeError."""
+    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+        _parse_checkpoint_pair("a\\b=sshleifer/tiny-gpt2")
+
+
+def test_parse_checkpoint_pair_null_byte_in_name_rejected() -> None:
+    """A name containing a null byte raises ArgumentTypeError."""
+    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+        _parse_checkpoint_pair("a\x00b=sshleifer/tiny-gpt2")
+
+
+# =============================================================================
+# RG1. Non-empty --out-dir warning
+# =============================================================================
+#
+# When run_eval is called on a directory that already contains files, a
+# warning must be printed to stderr so the operator notices the potential
+# overwrite before it happens.
+
+
+@pytest.mark.slow
+def test_run_eval_warns_on_nonempty_outdir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """run_eval prints a stderr warning when --out-dir is non-empty."""
+    from finpost.evals import sources as sources_module
+    from finpost.evals.eval_exact import run_eval
+
+    pool = _make_examples(10, source="gsm8k")
+    original_source = sources_module.REGISTRY["gsm8k"]
+    patched_source = sources_module.EvalSource(
+        name=original_source.name,
+        load_examples=lambda: pool,
+        extract_answer=original_source.extract_answer,
+        score=original_source.score,
+        default_max_new_tokens=original_source.default_max_new_tokens,
+    )
+    monkeypatch.setitem(sources_module.REGISTRY, "gsm8k", patched_source)
+
+    out_dir = tmp_path / "run_rg1"
+    kwargs = dict(
+        checkpoints={"tiny": "sshleifer/tiny-gpt2"},
+        sources=["gsm8k"],
+        n=4,
+        seed=42,
+        out_dir=out_dir,
+        batch_sizes={"gsm8k": 2},
+        gpu_cost_per_hour=None,
+        device="cpu",
+    )
+
+    # First run: directory is freshly created — no warning.
+    run_eval(**kwargs)
+    captured = capsys.readouterr()
+    assert "WARNING" not in captured.err, (
+        "No warning expected on first run into an empty directory"
+    )
+
+    # Second run: directory now contains the artifacts from the first run.
+    run_eval(**kwargs)
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.err, (
+        "Expected a non-empty-dir warning on the second run"
+    )
+    assert "non-empty" in captured.err.lower()
+
+
+# =============================================================================
+# RG2. Pre-run cost estimate
+# =============================================================================
+#
+# When --gpu-cost-per-hour is supplied, a cost estimate must appear on
+# stdout BEFORE any model loading.  We verify the estimate appears when the
+# flag is set and is absent when it is not.
+
+
+@pytest.mark.slow
+def test_run_eval_prints_cost_estimate_when_flag_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """run_eval prints a workload + cost estimate when gpu_cost_per_hour is provided."""
+    from finpost.evals import sources as sources_module
+    from finpost.evals.eval_exact import run_eval
+
+    pool = _make_examples(10, source="gsm8k")
+    original_source = sources_module.REGISTRY["gsm8k"]
+    patched_source = sources_module.EvalSource(
+        name=original_source.name,
+        load_examples=lambda: pool,
+        extract_answer=original_source.extract_answer,
+        score=original_source.score,
+        default_max_new_tokens=original_source.default_max_new_tokens,
+    )
+    monkeypatch.setitem(sources_module.REGISTRY, "gsm8k", patched_source)
+
+    run_eval(
+        checkpoints={"tiny": "sshleifer/tiny-gpt2"},
+        sources=["gsm8k"],
+        n=4,
+        seed=42,
+        out_dir=tmp_path / "rg2_with_cost",
+        batch_sizes={"gsm8k": 2},
+        gpu_cost_per_hour=0.79,
+        device="cpu",
+    )
+    captured = capsys.readouterr()
+    # Workload line always printed.
+    assert "Workload estimate" in captured.out
+    assert "generations" in captured.out
+    # Cost line only printed when gpu_cost_per_hour is set.
+    assert "~100 tok/s" in captured.out
+    assert "$0." in captured.out or "$" in captured.out
+
+
+@pytest.mark.slow
+def test_run_eval_no_cost_estimate_when_flag_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """run_eval does NOT print a cost estimate when gpu_cost_per_hour is None."""
+    from finpost.evals import sources as sources_module
+    from finpost.evals.eval_exact import run_eval
+
+    pool = _make_examples(10, source="gsm8k")
+    original_source = sources_module.REGISTRY["gsm8k"]
+    patched_source = sources_module.EvalSource(
+        name=original_source.name,
+        load_examples=lambda: pool,
+        extract_answer=original_source.extract_answer,
+        score=original_source.score,
+        default_max_new_tokens=original_source.default_max_new_tokens,
+    )
+    monkeypatch.setitem(sources_module.REGISTRY, "gsm8k", patched_source)
+
+    run_eval(
+        checkpoints={"tiny": "sshleifer/tiny-gpt2"},
+        sources=["gsm8k"],
+        n=4,
+        seed=42,
+        out_dir=tmp_path / "rg2_no_cost",
+        batch_sizes={"gsm8k": 2},
+        gpu_cost_per_hour=None,
+        device="cpu",
+    )
+    captured = capsys.readouterr()
+    # Workload line still printed.
+    assert "Workload estimate" in captured.out
+    # Cost line must NOT appear.
+    assert "~100 tok/s" not in captured.out
+
+
+# =============================================================================
+# RG3. OOM-halving summary
+# =============================================================================
+#
+# After a run that triggered OOM fallbacks, run_eval must print a summary
+# to stderr.  We monkeypatch model.generate to inject a single OOM.
+
+
+@pytest.mark.slow
+def test_run_eval_prints_oom_summary_after_oom(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """run_eval prints OOM-halving summary to stderr when OOM occurred."""
+    import finpost.evals.eval_exact as eval_exact_module
+    from finpost.evals import sources as sources_module
+    from finpost.evals.eval_exact import run_eval
+
+    pool = _make_examples(10, source="gsm8k")
+    original_source = sources_module.REGISTRY["gsm8k"]
+    patched_source = sources_module.EvalSource(
+        name=original_source.name,
+        load_examples=lambda: pool,
+        extract_answer=original_source.extract_answer,
+        score=original_source.score,
+        default_max_new_tokens=original_source.default_max_new_tokens,
+    )
+    monkeypatch.setitem(sources_module.REGISTRY, "gsm8k", patched_source)
+
+    # Intercept model loading to inject a flaky generate().
+    original_load = eval_exact_module._load_model_and_tokenizer
+
+    def patched_load(model_path, dtype, device):
+        model, tokenizer = original_load(model_path, dtype=dtype, device=device)
+        call_count = 0
+        original_generate = model.generate
+
+        def oom_once(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
+            return original_generate(*args, **kwargs)
+
+        model.generate = oom_once  # type: ignore[method-assign]
+        return model, tokenizer
+
+    monkeypatch.setattr(eval_exact_module, "_load_model_and_tokenizer", patched_load)
+
+    run_eval(
+        checkpoints={"tiny": "sshleifer/tiny-gpt2"},
+        sources=["gsm8k"],
+        n=4,
+        seed=42,
+        out_dir=tmp_path / "rg3_oom",
+        batch_sizes={"gsm8k": 2},
+        gpu_cost_per_hour=None,
+        device="cpu",
+    )
+    captured = capsys.readouterr()
+    assert "OOM fallback halved batch size" in captured.err
+    assert "batch-size" in captured.err
+
+
+# =============================================================================
+# RB1. _strip_string normalization failure logging
+# =============================================================================
+#
+# When score_math's _strip_string call raises, the failure must be counted.
+# At the end of run_eval the count must appear in stderr.
+
+
+def test_strip_string_failure_increments_counter() -> None:
+    """score_math increments _strip_string_failure_count when _strip_string raises."""
+    import finpost.evals.sources as sources_module
+    from finpost.evals.sources import score_math
+
+    # Reset the counter to a known baseline.
+    sources_module._strip_string_failure_count = 0
+
+    # Inject a pathological string that will trigger _remove_right_units's
+    # bare assert (two '\text{ ' markers).  The assert fires inside _strip_string,
+    # score_math's except-block catches it and increments the counter.
+    bad_latex = r"3\text{ apples}\text{ oranges}"
+    score_math(bad_latex, "different")
+
+    assert sources_module._strip_string_failure_count == 1, (
+        f"Expected _strip_string_failure_count=1, "
+        f"got {sources_module._strip_string_failure_count}"
+    )

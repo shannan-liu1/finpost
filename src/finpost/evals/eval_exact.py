@@ -77,8 +77,22 @@ from typing import Any
 
 import torch
 
+import finpost.evals.sources as _sources_module
 from finpost.evals.sources import REGISTRY, EvalSource
 from finpost.safety import safe_load_model, safe_load_tokenizer
+
+# =============================================================================
+# Module-level OOM-halving counter (RG3).
+#
+# _generate_chunk_with_oom_fallback increments this each time it halves the
+# batch size. run_eval resets it at entry and prints a summary at exit if
+# any OOMs occurred, so the operator knows to lower --batch-size-* for future
+# runs. A module-level mutable is intentional: eval_exact is a single-process
+# CLI with no concurrency, and this avoids threading a new counter value
+# through the entire generation call stack.
+# =============================================================================
+
+_oom_halving_count: int = 0
 
 # =============================================================================
 # CUDA determinism helper
@@ -375,6 +389,10 @@ def _generate_chunk_with_oom_fallback(
             f"retrying at batch_size={new_batch_size}",
             file=sys.stderr,
         )
+        # Increment the run-level counter so we can warn the operator at the
+        # end of the run to lower their starting batch size.
+        global _oom_halving_count
+        _oom_halving_count += 1
 
         # Free cached GPU memory before retrying.
         if torch.cuda.is_available():
@@ -957,6 +975,22 @@ def run_eval(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # RG1: warn if --out-dir is non-empty so the operator notices before
+    # existing artifacts are silently overwritten by this run.
+    existing = list(out_dir.iterdir())
+    if existing:
+        print(
+            f"[eval_exact] WARNING: --out-dir {out_dir} is non-empty "
+            f"({len(existing)} files). Existing files will be overwritten.",
+            file=sys.stderr,
+        )
+
+    # Reset per-invocation counters so multiple run_eval calls in the same
+    # process (e.g., from tests) don't accumulate counts across runs.
+    global _oom_halving_count
+    _oom_halving_count = 0
+    _sources_module._strip_string_failure_count = 0
+
     # Set CUDA determinism flags before any model loading or CUDA tensor work.
     # This is a no-op on CPU. See _set_cuda_determinism for the rationale.
     _set_cuda_determinism(device)
@@ -1001,6 +1035,31 @@ def run_eval(
         sampled = _sample_examples(all_examples, n=n, seed=seed)
         sampled_examples[source.name] = sampled
         print(f"  {source.name}: {len(sampled)} examples (from {len(all_examples)} total)")
+
+    # RG2: Print a pre-run workload and cost estimate so the operator can
+    # Ctrl-C before any compute is paid for if the numbers look wrong.
+    # total_examples counts each (checkpoint, source) pair independently
+    # because each checkpoint must process each source separately.
+    total_examples = (
+        sum(len(samples) for samples in sampled_examples.values())
+        * len(checkpoints)
+    )
+    worst_case_tokens = total_examples * max(
+        s.default_max_new_tokens for s in eval_sources
+    )
+    print(
+        f"[eval_exact] Workload estimate: {total_examples} generations, "
+        f"up to {worst_case_tokens:,} new tokens worst case."
+    )
+    if gpu_cost_per_hour is not None:
+        # Conservative throughput: ~100 tok/s on T4 bf16, faster on A40/H100.
+        # This is an upper-bound time estimate (worst case generation length).
+        rough_hours = worst_case_tokens / 100 / 3600
+        rough_cost = rough_hours * gpu_cost_per_hour
+        print(
+            f"[eval_exact]   At ~100 tok/s, that is ~{rough_hours:.2f}h "
+            f"= ~${rough_cost:.2f} at ${gpu_cost_per_hour:.2f}/hr."
+        )
 
     # Build generation_settings for run_metadata.json.
     generation_settings: dict[str, Any] = {
@@ -1134,6 +1193,30 @@ def run_eval(
         checkpoints=checkpoints,
     )
 
+    # RG3: Summarise OOM-fallback halvings so the operator can tune the
+    # starting batch size for the next run and avoid retry overhead.
+    if _oom_halving_count > 0:
+        print(
+            f"[eval_exact] Note: OOM fallback halved batch size "
+            f"{_oom_halving_count} time(s) during this run. Consider "
+            f"starting future runs with a smaller --batch-size-* to avoid "
+            f"the retry overhead.",
+            file=sys.stderr,
+        )
+
+    # RB1: Summarise Hendrycks _strip_string normalization failures so the
+    # operator can distinguish silent normalization errors from genuine model
+    # errors when MATH accuracy looks unexpectedly low.
+    if _sources_module._strip_string_failure_count > 0:
+        print(
+            f"[eval_exact] Note: Hendrycks _strip_string normalization raised "
+            f"on {_sources_module._strip_string_failure_count} MATH example(s). "
+            f"Those examples fell through to direct equality and numeric "
+            f"fallback; some may have silently scored False due to formatting "
+            f"differences.",
+            file=sys.stderr,
+        )
+
     print(f"\n[eval_exact] Done. Results written to: {out_dir}")
 
 
@@ -1158,7 +1241,18 @@ def _parse_checkpoint_pair(value: str) -> tuple[str, str]:
     Raises
     ------
     argparse.ArgumentTypeError
-        If the value does not contain exactly one ``=`` separator.
+        If the value does not contain exactly one ``=`` separator,
+        if the name is empty or the path is empty, or if the name
+        contains path-traversal characters (``/``, ``\\``, ``..``,
+        or null bytes).
+
+    Security note: the name flows into the output filename
+    ``details_{name}_{source}.csv``.  Without this guard a caller
+    passing ``--checkpoints "../etc=path"`` would write the CSV
+    outside ``--out-dir``.  We reject the name — not the path —
+    because the path is an intentional file-system reference while
+    the name is only a human-readable label that becomes part of a
+    filename.
     """
     if "=" not in value:
         raise argparse.ArgumentTypeError(
@@ -1172,6 +1266,12 @@ def _parse_checkpoint_pair(value: str) -> tuple[str, str]:
     if not path:
         raise argparse.ArgumentTypeError(
             f"checkpoint path is empty in {value!r}"
+        )
+    # Guard: the name is used verbatim in the output filename.  Reject any
+    # name that contains characters that could escape the output directory.
+    if any(c in name for c in ("/", "\\", "..", "\x00")):
+        raise argparse.ArgumentTypeError(
+            f"checkpoint name {name!r} must not contain path separators or '..'"
         )
     return name, path
 
