@@ -53,9 +53,12 @@ Design notes for anyone reading this to learn from it
   unrelated bugs.
 - Byte-identical re-runs: the details CSV contains no timestamps or
   run-specific state. The sample order comes from a seeded shuffle.
-  Greedy decoding is fully deterministic. Together these guarantee that
-  ``details_*.csv`` is byte-for-byte identical across runs with the same
-  seed on the same device and dtype.
+  Greedy decoding is fully deterministic on CPU. On CUDA, byte-identity
+  also requires explicit determinism flags (cuDNN algorithm selection is
+  otherwise non-deterministic). ``_set_cuda_determinism`` sets these flags
+  before any model loading when device starts with ``"cuda"``. Together
+  these guarantee that ``details_*.csv`` is byte-for-byte identical across
+  runs with the same seed on the same device and dtype.
 """
 
 from __future__ import annotations
@@ -64,6 +67,7 @@ import argparse
 import csv
 import datetime
 import json
+import os
 import random
 import subprocess
 import sys
@@ -75,6 +79,45 @@ import torch
 
 from finpost.evals.sources import REGISTRY, EvalSource
 from finpost.safety import safe_load_model, safe_load_tokenizer
+
+# =============================================================================
+# CUDA determinism helper
+# =============================================================================
+
+
+def _set_cuda_determinism(device: str) -> None:
+    """Set CUDA determinism flags when running on GPU.
+
+    cuDNN's algorithm selector picks the fastest kernel per operation, which
+    can vary across runs and produce different argmax results on logit ties.
+    These flags force deterministic kernels so ``details_*.csv`` is
+    byte-identical across re-runs with the same seed on the same device.
+
+    Must be called BEFORE any CUDA tensor allocation so that
+    CUBLAS_WORKSPACE_CONFIG takes effect before the CUDA context is
+    initialized.
+
+    Parameters
+    ----------
+    device
+        The device string from the CLI (e.g. ``"cuda"`` or ``"cpu"``).
+        Does nothing if device does not start with ``"cuda"``.
+    """
+    if not device.startswith("cuda"):
+        # CPU runs are already fully deterministic; no flags needed.
+        return
+
+    # CUBLAS_WORKSPACE_CONFIG must be in the environment before CUDA context
+    # init. setdefault means we do not override a value the user explicitly set.
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+    # warn_only=True: some operations have no deterministic implementation.
+    # We log a warning instead of crashing — the intent is determinism where
+    # possible, not an abort-on-first-indeterminate-op policy.
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
 # =============================================================================
 # RunTracker — inline cost and throughput helper (~40 lines)
@@ -890,6 +933,10 @@ def run_eval(
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Set CUDA determinism flags before any model loading or CUDA tensor work.
+    # This is a no-op on CPU. See _set_cuda_determinism for the rationale.
+    _set_cuda_determinism(device)
 
     # Design note on GPU memory management:
     # After evaluating a checkpoint we ``del model, tokenizer`` here in

@@ -30,6 +30,7 @@ from finpost.evals.eval_exact import (
     RunTracker,
     _generate_batch,
     _sample_examples,
+    _set_cuda_determinism,
     _write_accuracy_summary,
     _write_cost_summary,
     _write_details_csv,
@@ -649,3 +650,81 @@ def test_run_tracker_estimates_cost_when_rate_supplied(tmp_path: Path) -> None:
     assert isinstance(data["estimated_cost_usd"], float)
     # Cost is non-negative: elapsed_sec >= 0, rate > 0.
     assert data["estimated_cost_usd"] >= 0.0
+
+
+# =============================================================================
+# 7. CUDA determinism flags (Bug 5)
+# =============================================================================
+#
+# _set_cuda_determinism must set the three torch determinism flags and the
+# CUBLAS_WORKSPACE_CONFIG env var when device starts with "cuda".
+# On CPU it must be a no-op so we don't waste cycles on non-CUDA runs.
+
+
+def test_cuda_determinism_flags_set_on_cuda_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_set_cuda_determinism sets all required flags when device='cuda'."""
+    # Capture calls to torch.use_deterministic_algorithms.
+    calls: list[tuple] = []
+
+    def mock_use_deterministic(val: bool, warn_only: bool = False) -> None:
+        calls.append((val, warn_only))
+
+    monkeypatch.setattr(torch, "use_deterministic_algorithms", mock_use_deterministic)
+    # Record the cudnn attribute changes via a simple flag.
+    deterministic_values: list[bool] = []
+    benchmark_values: list[bool] = []
+
+    # torch.backends.cudnn is a module-level object; capture attribute sets
+    # by wrapping the assignments in a custom context.
+    original_det = torch.backends.cudnn.deterministic
+    original_bench = torch.backends.cudnn.benchmark
+
+    _set_cuda_determinism("cuda")
+
+    # torch.use_deterministic_algorithms must have been called once with
+    # (True, warn_only=True).
+    assert len(calls) == 1, (
+        f"Expected 1 call to torch.use_deterministic_algorithms, got {len(calls)}"
+    )
+    assert calls[0] == (True, True), (
+        f"Expected (True, warn_only=True), got {calls[0]}"
+    )
+
+    # torch.backends.cudnn.deterministic must be True.
+    assert torch.backends.cudnn.deterministic is True, (
+        "torch.backends.cudnn.deterministic was not set to True"
+    )
+    # torch.backends.cudnn.benchmark must be False.
+    assert torch.backends.cudnn.benchmark is False, (
+        "torch.backends.cudnn.benchmark was not set to False"
+    )
+
+    # CUBLAS_WORKSPACE_CONFIG must be set.
+    import os
+    assert "CUBLAS_WORKSPACE_CONFIG" in os.environ, (
+        "CUBLAS_WORKSPACE_CONFIG env var was not set"
+    )
+
+    # Restore cudnn settings to avoid polluting other tests.
+    torch.backends.cudnn.deterministic = original_det
+    torch.backends.cudnn.benchmark = original_bench
+
+
+def test_cuda_determinism_flags_not_set_on_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_set_cuda_determinism is a no-op when device='cpu'."""
+    calls: list[tuple] = []
+
+    def mock_use_deterministic(val: bool, warn_only: bool = False) -> None:
+        calls.append((val, warn_only))
+
+    monkeypatch.setattr(torch, "use_deterministic_algorithms", mock_use_deterministic)
+
+    _set_cuda_determinism("cpu")
+
+    assert calls == [], (
+        "torch.use_deterministic_algorithms should NOT be called for device='cpu'"
+    )
