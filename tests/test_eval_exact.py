@@ -633,38 +633,6 @@ def test_run_tracker_records_elapsed_and_tokens(tmp_path: Path) -> None:
     assert tracker.total_generated_tokens == 150
 
 
-def test_run_tracker_writes_cost_summary(tmp_path: Path) -> None:
-    """RunTracker.write() produces a well-formed cost_summary.json."""
-    tracker = RunTracker(out_dir=tmp_path, run_name="run_tracker_test", gpu_cost_per_hour=None)
-    with tracker:
-        tracker.add_generated_tokens(200)
-    tracker.write()
-
-    json_path = tmp_path / "cost_summary.json"
-    assert json_path.exists()
-    data = json.loads(json_path.read_text())
-    assert data["generated_tokens"] == 200
-    assert data["estimated_cost_usd"] is None
-
-
-def test_run_tracker_estimates_cost_when_rate_supplied(tmp_path: Path) -> None:
-    """RunTracker computes estimated_cost_usd from elapsed_sec and rate."""
-    tracker = RunTracker(
-        out_dir=tmp_path,
-        run_name="costed_run",
-        gpu_cost_per_hour=3.6,  # $3.60/hr = $0.001/sec
-    )
-    with tracker:
-        tracker.add_generated_tokens(10)
-    tracker.write()
-
-    data = json.loads((tmp_path / "cost_summary.json").read_text())
-    # estimated_cost_usd is a float (not None) when a rate is supplied.
-    # The exact value depends on elapsed time; we only check the type here.
-    assert data["estimated_cost_usd"] is not None
-    assert isinstance(data["estimated_cost_usd"], float)
-    # Cost is non-negative: elapsed_sec >= 0, rate > 0.
-    assert data["estimated_cost_usd"] >= 0.0
 
 
 # =============================================================================

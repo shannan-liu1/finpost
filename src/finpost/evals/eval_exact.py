@@ -134,7 +134,9 @@ class RunTracker:
         with tracker:
             # ... eval loop ...
             tracker.add_generated_tokens(n)
-        tracker.write()  # writes cost_summary.json
+        # After __exit__, inspect tracker.elapsed_sec, tracker.gpu_type, etc.
+        # run_eval calls _write_cost_summary directly (with the correct dtype
+        # and generation_seconds) rather than via a write() method here.
 
     Attributes are public so tests can inspect them after ``__exit__``.
     """
@@ -176,34 +178,6 @@ class RunTracker:
     def add_generated_tokens(self, n: int) -> None:
         """Accumulate generated token count across all batches and sources."""
         self.total_generated_tokens += n
-
-    def write(self) -> None:
-        """Write cost_summary.json to out_dir."""
-        tokens_per_second = (
-            self.total_generated_tokens / self.elapsed_sec
-            if self.elapsed_sec > 0
-            else 0.0
-        )
-
-        # Dollar cost: (elapsed_sec / 3600) * cost_per_hour.
-        # Only computed if the caller supplied --gpu-cost-per-hour.
-        estimated_cost_usd: float | None = None
-        if self.gpu_cost_per_hour is not None:
-            estimated_cost_usd = (self.elapsed_sec / 3600.0) * self.gpu_cost_per_hour
-
-        _write_cost_summary(
-            out_dir=self.out_dir,
-            run_name=self.run_name,
-            start_time=self.start_time,
-            end_time=self.end_time,
-            elapsed_sec=self.elapsed_sec,
-            generation_seconds=self.elapsed_sec,  # placeholder; run_eval bypasses write() and passes the real value
-            gpu_type=self.gpu_type,
-            dtype=str(torch.float32),  # placeholder; run_eval writes cost_summary directly with the correct dtype
-            generated_tokens=self.total_generated_tokens,
-            tokens_per_second=tokens_per_second,
-            estimated_cost_usd=estimated_cost_usd,
-        )
 
 
 # =============================================================================
@@ -1226,7 +1200,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "One or more name=path pairs. PATH is a local directory or a "
             "Hugging Face model id. Example: "
-            "--checkpoints base=Qwen/Qwen2.5-0.5B combined=/tmp/step-00003000"
+            "--checkpoints base=Qwen/Qwen2.5-0.5B combined=/tmp/step-00003000 "
+            "Each path must be either an HF Hub model id or a local directory "
+            "in HF format (containing config.json and tokenizer files). "
+            "Raw training checkpoints from finpost.training.save_checkpoint are "
+            "NOT supported -- convert them to HF format first."
         ),
     )
     parser.add_argument(
