@@ -6,6 +6,8 @@ with positive and negative cases), and the REGISTRY lookup table.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from finpost.evals.sources import REGISTRY
@@ -21,12 +23,11 @@ def test_registry_contains_gsm8k_and_math() -> None:
     assert sorted(REGISTRY.keys()) == ["gsm8k", "math"]
 
 
-def test_registry_entries_are_frozen() -> None:
-    """EvalSource instances are immutable (frozen dataclass)."""
+def test_eval_source_is_frozen() -> None:
+    """Registry entries must be immutable so callers cannot mutate the registry at runtime."""
     gsm8k = REGISTRY["gsm8k"]
-    with pytest.raises((AttributeError, Exception)):
-        # Attempt to mutate a frozen dataclass.
-        gsm8k.name = "modified"
+    with pytest.raises(FrozenInstanceError):
+        gsm8k.name = "modified"  # type: ignore[misc]
 
 
 # =============================================================================
@@ -74,6 +75,12 @@ def test_gsm8k_strips_commas() -> None:
     gsm8k = REGISTRY["gsm8k"]
     result = gsm8k.extract_answer("#### 1,200")
     assert result == "1200"
+
+
+def test_gsm8k_composite_normalization() -> None:
+    """The spec example: $1,234. should normalize to 1234 (strip $, then trailing ., then commas)."""
+    result = REGISTRY["gsm8k"].extract_answer("answer is\n#### $1,234.")
+    assert result == "1234"
 
 
 def test_gsm8k_handles_negative() -> None:
@@ -165,6 +172,18 @@ def test_math_returns_none_on_unmatched_braces() -> None:
     math = REGISTRY["math"]
     result = math.extract_answer(r"\boxed{unclosed")
     assert result is None
+
+
+def test_math_returns_none_when_boxed_has_no_opening_brace() -> None:
+    """\\boxed appearing without a following { should return None, not crash."""
+    result = REGISTRY["math"].extract_answer(r"the answer is \boxed and then more text")
+    assert result is None
+
+
+def test_math_extracts_with_literal_braces_inside() -> None:
+    """Literal { and } inside \\boxed{} should be preserved in the extracted answer."""
+    result = REGISTRY["math"].extract_answer(r"\boxed{\{a, b\}}")
+    assert result == r"\{a, b\}"
 
 
 def test_math_returns_none_on_empty_boxed() -> None:
