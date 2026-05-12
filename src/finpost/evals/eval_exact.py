@@ -1236,9 +1236,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--device",
         type=str,
         default=None,
+        choices=["cuda", "cpu"],
         help=(
-            "Device to run generation on. Defaults to 'cuda' if available, "
-            "else 'cpu'."
+            "Device to run generation on. Choices: %(choices)s. "
+            "Defaults to 'cuda' if available, else 'cpu'."
         ),
     )
     parser.add_argument(
