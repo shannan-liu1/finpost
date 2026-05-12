@@ -259,3 +259,48 @@ These are durable rules that apply to every experiment in this workstream:
 - The branch `claude/compute-aware-post-training-CF2mL` carries this workstream's design and the eventual implementation. PRD-only changes are committed there; new code follows in subsequent commits as Stage issues land.
 - The OPD trainer reuses the optimizer, scheduler, and checkpointing components from `phase1-sft-trainer`. The new code is the pairwise loss, the rollout/verifier/bucketing pipeline, and the cost ledger — not a new training framework.
 - "GPRO" in casual notes is normalized to "GRPO" everywhere in this workstream's documentation.
+
+## Amendment 2026-05-11 — Stage 5 priority order and stop-point discipline
+
+Stage 5's original ordering of methods (A through E) was a logical / pedagogical ordering, not a priority-of-execution ordering. The five-method comparison stays in scope, but is now executed in priority-of-information order so that if cost or time forces an early stop, the methods that were already run form a self-coherent published result rather than a half-built comparison.
+
+### Execution order
+
+1. **A — uniform Supervised Fine-Tuning** (Stage 0 three-arm reruns)
+   - The anchor. Every other method's claim is "method X beats Supervised Fine-Tuning by some delta," which requires the Supervised Fine-Tuning number.
+   - Note: this is the only stage that produces the gsm8k-only and math-only specialist arms; those are needed by Stage 5 method comparisons that require all three arms.
+
+2. **C — uniform On-Policy Distillation** (`train_weight = 1.0` everywhere)
+   - The simpler On-Policy Distillation variant; runs before the experimental method per the "simpler baseline first" discipline.
+   - Tests: does On-Policy Distillation beat Supervised Fine-Tuning at all, irrespective of weighting?
+
+3. **D — verifier-weighted On-Policy Distillation** (`train_weight = 1.0 + alpha * uncertainty` or the bucketed equivalent)
+   - The headline experimental method.
+   - Tests, in combination with C: does the per-example weighting do the work, or was uniform On-Policy Distillation already capturing it?
+
+4. **B — rejection Supervised Fine-Tuning** (Supervised Fine-Tuning trained only on completions the verifier accepts)
+   - Alternative-explanation check: does the pairwise loss add anything beyond just training on correct rollouts?
+
+5. **E — adaptive-compute On-Policy Distillation** (D plus Stage 2 adaptive rollouts on ambiguous prompts)
+   - Tests a separate hypothesis — compute allocation across prompts — on top of the data-weighting hypothesis established by D versus C.
+
+### Natural stop points
+
+| Stop after | Claim available | Methods executed |
+|---|---|---|
+| 3 | "Verifier-weighted On-Policy Distillation beats uniform On-Policy Distillation, both beat Supervised Fine-Tuning" (or the null/refutation version). The core hypothesis is fully attributed. | A, C, D |
+| 4 | The above, plus: "and the pairwise loss is doing something rejection Supervised Fine-Tuning cannot replicate." | A, C, D, B |
+| 5 | The above, plus: "and adaptive compute allocation is more efficient than uniform allocation per prompt." Full story. | A, C, D, B, E |
+
+Stopping after position 1 or 2 is suboptimal — position 2 alone (Supervised Fine-Tuning + uniform On-Policy Distillation, no weighted On-Policy Distillation) cannot answer the headline question. Stopping after position 3 is the *minimum publishable / writeup-worthy unit* of this workstream.
+
+### Cost-gate operating rule
+
+Before launching each method (positions 2 through 5), inspect the cost ledger accumulated to that point. If actual spend is materially above the budget envelope sketched in the original Stage 5 section (more than approximately 1.5× the projected per-method cost), pause and root-cause before continuing. The cost-gate checklist already required per spend-bearing run still applies; this amendment adds the per-position pause-and-review step on top of it.
+
+### What does not change
+
+- The five methods themselves and their behavior contracts.
+- The matched-compute discipline within each method's two budget tiers (small / medium).
+- The acceptance criteria in the existing Acceptance criteria section. (Criterion 9 is now interpreted as "if method E was run, it explicitly states whether E beat methods A–D"; if E was not run, the writeup states that and explains the stop-point.)
+- The dependency on [`phase1-base-vs-sft-eval`](../phase1-base-vs-sft-eval/PRD.md) for the eval mechanism.
