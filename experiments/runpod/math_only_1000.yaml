@@ -1,0 +1,46 @@
+# RunPod ablation arm — Qwen2.5-0.5B SFT on MATH only, 1000 steps.
+#
+# Hyperparameters match the Kaggle ablation notebook
+# (notebooks/sft_phase1_kaggle_ablation_complete.ipynb) that produced the
+# `combined` checkpoint at 1000 steps, so this arm is directly comparable
+# in optimizer-budget terms.
+#
+# See gsm8k_only_1000.yaml for the full rationale on each setting.
+#
+# Run with:
+#   python -m finpost.training.train \
+#       --config experiments/runpod/math_only_1000.yaml --device cuda
+
+model:
+  base_model_id: Qwen/Qwen2.5-0.5B
+  dtype: float32
+  use_safetensors: true
+
+data:
+  sources: [math]
+  val_split_pct: 5.0
+  seed: 42
+
+training:
+  max_steps: 1000
+  warmup_steps: 100
+  lr: 1.0e-5
+  weight_decay: 0.01
+  grad_accum_steps: 4
+  grad_clip: 1.0
+  val_every_n_steps: 250
+  checkpoint_every_n_steps: 1000
+  per_device_batch_size: 1
+
+packing:
+  max_seq_len: 512
+  isolate_documents: true
+
+logging:
+  wandb_project: finpost-phase1-runpod
+  run_name: qwen-math_only-1000s
+
+checkpointing:
+  save_dir: results/checkpoints/qwen-math_only-1000s
+  retention_last_n: 1
+  resume_from: null
