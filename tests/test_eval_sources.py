@@ -235,6 +235,23 @@ def test_math_score_none_is_always_wrong() -> None:
 
 
 # =============================================================================
+# Unicode minus sign normalization (Bug 4)
+# =============================================================================
+
+
+def test_gsm8k_extract_unicode_minus() -> None:
+    """U+2212 (Unicode minus) in '#### −42' should extract as ASCII '-42'."""
+    result = REGISTRY["gsm8k"].extract_answer("#### −42")
+    assert result == "-42"
+
+
+def test_math_extract_unicode_minus() -> None:
+    r"""U+2212 in '\boxed{−42}' should extract as ASCII '-42'."""
+    result = REGISTRY["math"].extract_answer("\\boxed{−42}")
+    assert result == "-42"
+
+
+# =============================================================================
 # GSM8K numeric-equality fallback (Bug 2)
 # =============================================================================
 

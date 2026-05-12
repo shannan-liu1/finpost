@@ -64,6 +64,9 @@ def extract_gsm8k_answer(generation: str) -> str | None:
     where chain-of-thought might contain a ``####`` artifact) and
     returns the answer immediately following it, normalized by:
 
+    - Normalizing Unicode minus (U+2212) to ASCII hyphen. Models
+      occasionally emit U+2212 when copying from LaTeX or other typeset
+      math contexts; GSM8K gold answers always use ASCII ``-``.
     - Stripping leading and trailing whitespace.
     - Stripping leading dollar signs (currency notation).
     - Stripping trailing periods and commas (punctuation).
@@ -81,6 +84,10 @@ def extract_gsm8k_answer(generation: str) -> str | None:
     The extracted numeric answer (string, not float — some answers are
     decimals or negative), or ``None`` on parse failure.
     """
+    # Normalize Unicode minus (U+2212) to ASCII hyphen, which is what
+    # GSM8K gold answers use.
+    generation = generation.replace("−", "-")
+
     if "####" not in generation:
         return None
 
@@ -151,6 +158,9 @@ def extract_math_answer(generation: str) -> str | None:
     balanced braces (important for nested LaTeX like ``\\frac{1}{2}``),
     and returns the inner content normalized by:
 
+    - Normalizing Unicode minus (U+2212) to ASCII hyphen. Models
+      occasionally emit U+2212 when copying from LaTeX or other typeset
+      math contexts.
     - Stripping leading and trailing whitespace.
     - Stripping outer ``$`` if present.
 
@@ -166,6 +176,10 @@ def extract_math_answer(generation: str) -> str | None:
     -------
     The extracted answer (string), or ``None`` on parse failure.
     """
+    # Normalize Unicode minus (U+2212) to ASCII hyphen, which is what
+    # MATH gold answers use.
+    generation = generation.replace("−", "-")
+
     if "\\boxed" not in generation:
         return None
 
