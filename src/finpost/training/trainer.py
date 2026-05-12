@@ -43,8 +43,8 @@ import numpy as np
 import torch
 import wandb
 from torch.utils.data import DataLoader
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from finpost.safety import safe_load_model, safe_load_tokenizer
 from finpost.training.checkpoint import (
     apply_retention_policy,
     load_checkpoint,
@@ -226,15 +226,20 @@ class Trainer:
         # uses eos_token_id as a between-document separator, so it must
         # be set; the attention_mask the collator builds tells the
         # model where padding is regardless of which id we use here.
-        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.base_model_id)
+        # safe_load_tokenizer enforces trust_remote_code=False per SECURITY.md.
+        self.tokenizer = safe_load_tokenizer(self.config.model.base_model_id)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # 3. Model. ``getattr(torch, ...)`` is the standard way to turn
         # a config string ("bfloat16") into a torch.dtype. We move to
         # device immediately so subsequent .grad allocations live there.
+        # safe_load_model enforces trust_remote_code=False and defaults to
+        # use_safetensors=True; we pass use_safetensors from config so
+        # test models (e.g. tiny-gpt2) that ship only .bin weights can
+        # set it to False explicitly. See SECURITY.md for the policy.
         dtype = getattr(torch, self.config.model.dtype)
-        self.model = AutoModelForCausalLM.from_pretrained(
+        self.model = safe_load_model(
             self.config.model.base_model_id,
             dtype=dtype,
             use_safetensors=self.config.model.use_safetensors,

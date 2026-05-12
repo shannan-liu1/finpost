@@ -262,23 +262,21 @@ def _patch_tiny_model_load(monkeypatch: pytest.MonkeyPatch) -> None:
     The checkpoint test uses the same trick — see
     ``tests/test_checkpoint.py::_build_tiny_gpt2``.
 
-    We patch ``AutoModelForCausalLM.from_pretrained`` at the trainer's
-    binding so dropout config gets injected on every model load
-    triggered by ``Trainer._setup``.
+    We patch ``safe_load_model`` at the trainer's binding so dropout
+    config gets injected on every model load triggered by
+    ``Trainer._setup``. (The trainer no longer references
+    AutoModelForCausalLM directly; all model loads go through
+    finpost.safety.safe_load_model.)
     """
-    original = trainer_module.AutoModelForCausalLM.from_pretrained
+    original = trainer_module.safe_load_model
 
-    def from_pretrained_no_dropout(name: str, **kwargs):
+    def safe_load_model_no_dropout(name: str, **kwargs):
         kwargs.setdefault("attn_pdrop", 0.0)
         kwargs.setdefault("embd_pdrop", 0.0)
         kwargs.setdefault("resid_pdrop", 0.0)
         return original(name, **kwargs)
 
-    monkeypatch.setattr(
-        trainer_module.AutoModelForCausalLM,
-        "from_pretrained",
-        from_pretrained_no_dropout,
-    )
+    monkeypatch.setattr(trainer_module, "safe_load_model", safe_load_model_no_dropout)
 
 
 def _disable_wandb(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
@@ -727,3 +725,80 @@ def test_rng_capture_and_apply_round_trip() -> None:
     assert torch.equal(drawn_torch, again_torch)
     assert np.allclose(drawn_numpy, again_numpy)
     assert drawn_python == again_python
+
+
+# -----------------------------------------------------------------------------
+# M1: trainer must route all loads through finpost.safety wrappers
+# -----------------------------------------------------------------------------
+
+
+def test_trainer_uses_safe_loaders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trainer._setup routes model and tokenizer loads through finpost.safety wrappers.
+
+    Patches finpost.safety.safe_load_model and safe_load_tokenizer at the
+    trainer's module binding and verifies both are called with the configured
+    model id.  Other expensive setup (dataset loading, wandb) is stubbed out.
+    """
+    safe_model_calls: list[tuple] = []
+    safe_tokenizer_calls: list[tuple] = []
+
+    # Capture calls to safe_load_tokenizer, returning a real tokenizer so
+    # the rest of _setup (pad_token assignment) does not crash.
+    from transformers import AutoTokenizer as _RealAutoTokenizer
+
+    def mock_safe_load_tokenizer(name: str, **kwargs):
+        safe_tokenizer_calls.append((name,))
+        # tiny-gpt2 tokenizer with dropout disabled for fast load.
+        tok = _RealAutoTokenizer.from_pretrained(name, **kwargs)
+        return tok
+
+    # Capture calls to safe_load_model, returning a real model (with dropout
+    # disabled so downstream determinism tests are unaffected).
+    from transformers import AutoModelForCausalLM as _RealAutoModelForCausalLM
+
+    def mock_safe_load_model(name: str, **kwargs):
+        safe_model_calls.append((name,))
+        kwargs.setdefault("attn_pdrop", 0.0)
+        kwargs.setdefault("embd_pdrop", 0.0)
+        kwargs.setdefault("resid_pdrop", 0.0)
+        return _RealAutoModelForCausalLM.from_pretrained(name, **kwargs)
+
+    monkeypatch.setattr(trainer_module, "safe_load_tokenizer", mock_safe_load_tokenizer)
+    monkeypatch.setattr(trainer_module, "safe_load_model", mock_safe_load_model)
+
+    _patch_loaders(
+        monkeypatch,
+        train_batches=_three_train_batches(),
+        val_batches=_two_val_batches(),
+    )
+    _disable_wandb(monkeypatch)
+
+    config = _make_config(
+        tmp_path=tmp_path,
+        max_steps=2,
+        warmup_steps=1,
+        val_every_n_steps=10,         # never fires
+        checkpoint_every_n_steps=10,  # never fires mid-run
+    )
+
+    Trainer(config).train()
+
+    # Both safe wrappers must have been called exactly once with the
+    # configured model id.
+    assert len(safe_tokenizer_calls) == 1, (
+        f"safe_load_tokenizer called {len(safe_tokenizer_calls)} time(s), expected 1"
+    )
+    assert safe_tokenizer_calls[0] == (_TINY_MODEL,), (
+        f"safe_load_tokenizer called with {safe_tokenizer_calls[0]!r}, "
+        f"expected ({_TINY_MODEL!r},)"
+    )
+
+    assert len(safe_model_calls) == 1, (
+        f"safe_load_model called {len(safe_model_calls)} time(s), expected 1"
+    )
+    assert safe_model_calls[0] == (_TINY_MODEL,), (
+        f"safe_load_model called with {safe_model_calls[0]!r}, "
+        f"expected ({_TINY_MODEL!r},)"
+    )
