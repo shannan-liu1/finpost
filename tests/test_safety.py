@@ -101,14 +101,14 @@ def test_safe_load_model_use_safetensors_false_override_is_forwarded() -> None:
 
 
 def test_safe_load_model_extra_kwargs_forwarded() -> None:
-    """Extra keyword arguments (e.g. torch_dtype) are forwarded to from_pretrained."""
+    """Extra keyword arguments (e.g. dtype) are forwarded to from_pretrained."""
     import torch
 
     with patch("finpost.safety._AutoModelForCausalLM") as mock_cls:
-        safe_load_model("some/model", torch_dtype=torch.float16)
+        safe_load_model("some/model", dtype=torch.float16)
 
     _, kwargs = mock_cls.from_pretrained.call_args
-    assert kwargs["torch_dtype"] == torch.float16
+    assert kwargs["dtype"] == torch.float16
 
 
 # =============================================================================

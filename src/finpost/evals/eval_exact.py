@@ -745,7 +745,7 @@ def _load_model_and_tokenizer(
     # has no safetensors variant. It is used exclusively in unit tests.
     # For all production models (Qwen, Gemma), use_safetensors=True (the
     # safe_load_model default) refuses pickle weights per SECURITY.md policy.
-    if "tiny-gpt2" in model_path:
+    if model_path == "sshleifer/tiny-gpt2":
         # Override: use_safetensors=False because this test model ships no
         # safetensors variant. Justification: test-only, not used in production.
         model = safe_load_model(
@@ -1008,7 +1008,7 @@ def run_eval(
                     "elapsed_sec": round(elapsed, 3),
                 })
 
-            # Done with this checkpoint. Rebind model and tokenizer here
+            # Done with this checkpoint. Unbind model and tokenizer here
             # (in run_eval's scope) so the reference count drops to zero and
             # the weights are freed. See the design note near the top of this
             # function for why del must happen here rather than in a helper.

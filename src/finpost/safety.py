@@ -101,6 +101,12 @@ def safe_load_model(
         (e.g. test models such as sshleifer/tiny-gpt2).
     **kwargs
         Forwarded unchanged to ``AutoModelForCausalLM.from_pretrained``.
+
+    Notes
+    -----
+    Both ``transformers >= 4.26`` defaults ``trust_remote_code`` to False,
+    but we still pass it explicitly here. Defense in depth: if the
+    upstream default ever changes, our policy is unaffected.
     """
     return _AutoModelForCausalLM.from_pretrained(
         pretrained_model_name_or_path,
@@ -132,6 +138,12 @@ def safe_load_tokenizer(
         tokenizer code. Passing True must be deliberate.
     **kwargs
         Forwarded unchanged to ``AutoTokenizer.from_pretrained``.
+
+    Notes
+    -----
+    Both ``transformers >= 4.26`` defaults ``trust_remote_code`` to False,
+    but we still pass it explicitly here. Defense in depth: if the
+    upstream default ever changes, our policy is unaffected.
     """
     return _AutoTokenizer.from_pretrained(
         pretrained_model_name_or_path,
