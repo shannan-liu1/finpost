@@ -187,7 +187,7 @@ experiments/compute_aware/
 ├── opd_verifier_weighted.yaml
 └── opd_adaptive.yaml
 
-src/finpost/postraining/
+src/finpost/posttraining/
 ├── rollout.py        # cached batched sampling
 ├── verifier.py       # exact -> symbolic -> numeric ladder
 ├── bucket.py         # difficulty assignment
@@ -223,7 +223,7 @@ Each criterion is a command, file existence check, or observable numeric outcome
 4. `python scripts/run_bucketing.py --rollouts <cache>` emits a bucket assignment file with the three buckets and reports their counts.
 5. `python scripts/run_rollout.py --checkpoint <best_sft> --prompts <ambiguous_subset> --k 12 --append` appends to the cache without regenerating any earlier samples.
 6. `pytest tests/test_opd_loss.py -k parity` passes: OPD per-example loss matches the DPO reference within `1e-5` on a fixed batch with `train_weight=1.0`.
-7. Numerical correctness verifier never invokes an LLM-as-judge call. `grep -R "anthropic\|openai" src/finpost/postraining/verifier.py` returns no matches.
+7. Numerical correctness verifier never invokes an LLM-as-judge call. `grep -R "anthropic\|openai" src/finpost/posttraining/verifier.py` returns no matches.
 8. The cost ledger emitted by `python scripts/build_cost_report.py --run-glob 'results/compute_aware/*'` contains rows for at least methods A, B, C, D, E at the small budget, with all of: rollout tokens, verifier calls, training tokens, GPU-hours, USD cost, GSM8K accuracy, MATH accuracy, accuracy per dollar, accuracy per GPU-hour.
 9. The headline writeup (`results/compute_aware/writeup.md`) explicitly states whether method E (adaptive-compute OPD) beat methods A–D on accuracy per GPU-hour at both budgets, and on absolute accuracy at the medium budget, with bootstrapped 95% confidence intervals.
 10. Every spend-bearing run launched as part of Stages 0–5 carries a completed `.scratch/templates/cost-gate-checklist.md` under `results/<run_name>/cost_gate.md`. No spend-bearing run is launched without the checklist's "Owner decision: approve" line filled in.

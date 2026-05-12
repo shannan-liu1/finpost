@@ -111,7 +111,7 @@ This workstream exists to preserve the idea without letting it distort the curre
 
 ## Amendment 2026-05-11 — reuse Phase 1.5 rollout and verifier plumbing
 
-The original implementation plan implied this workstream would build its own rollout/sampler/verifier stack. Those components are now built in [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md) and exposed under `src/finpost/postraining/` (`rollout.py`, `verifier.py`, `bucket.py`, `cost_ledger.py`). This workstream consumes them and adds only:
+The original implementation plan implied this workstream would build its own rollout/sampler/verifier stack. Those components are now built in [`phase1-compute-aware-post-training`](../phase1-compute-aware-post-training/PRD.md) and exposed under `src/finpost/posttraining/` (`rollout.py`, `verifier.py`, `bucket.py`, `cost_ledger.py`). This workstream consumes them and adds only:
 
 - grouped advantage normalization,
 - KL control against a frozen reference model,

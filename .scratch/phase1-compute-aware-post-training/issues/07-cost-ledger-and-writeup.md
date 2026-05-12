@@ -13,7 +13,7 @@ Combine the per-run cost JSONs and eval JSONs into the cost ledger, then write t
 ## Scope
 
 **In scope:**
-- `src/finpost/postraining/cost_ledger.py` — schema validation and table assembly.
+- `src/finpost/posttraining/cost_ledger.py` — schema validation and table assembly.
 - `scripts/build_cost_report.py --run-glob 'results/compute_aware/*'` → markdown table at `results/compute_aware/cost_ledger.md`.
 - Plot: accuracy vs. dollars and accuracy vs. GPU-hours, one line per method, two budget points each.
 - `results/compute_aware/writeup.md`: one page. Names the winner on accuracy, on `accuracy / $`, on `accuracy / GPU-hour`. Lists failure cases. Identifies which prompts the adaptive method spent extra rollout tokens on that the uniform method did not.

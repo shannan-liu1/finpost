@@ -13,7 +13,7 @@ Implement the On-Policy Distillation (OPD) trainer. It consumes the preference d
 ## Scope
 
 **In scope:**
-- `src/finpost/postraining/opd.py`.
+- `src/finpost/posttraining/opd.py`.
 - Loss:
   ```
   loss = -log_sigmoid(beta * ((logp_pi(chosen|x) - logp_ref(chosen|x))

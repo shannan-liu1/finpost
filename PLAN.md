@@ -85,7 +85,7 @@ For terminology, see [`CONTEXT.md`](./CONTEXT.md). Abbreviations are spelled out
 DPO keeps its **own fixed offline** preference-pair pipeline, deliberately separate from the Phase 1.5 on-policy rollout pipeline. The two pipelines share the verifier ladder and the pairwise-loss math; they do not share data. The split lets us measure offline DPO against on-policy On-Policy Distillation as two distinct training regimes on the same evaluation surface. Decision Q-B (all-correct / all-incorrect prompts) is resolved by construction in both pipelines independently: such prompts contribute zero pairs and are tracked separately as a model-quality signal.
 
 - [ ] From the best SFT checkpoint, sample N=8 completions per prompt at temperature 0.8 over a held-out set of training prompts (not test). DPO does this **once**; the dataset is frozen for the run.
-- [ ] Programmatically grade each completion (final-answer match) using the shared verifier ladder under `src/finpost/postraining/verifier.py`.
+- [ ] Programmatically grade each completion (final-answer match) using the shared verifier ladder under `src/finpost/posttraining/verifier.py`.
 - [ ] Form preference pairs using this workstream's own builder.
 - [ ] Target: ~5,000 preference pairs.
 
@@ -175,7 +175,7 @@ The current pedagogical order is:
 
 1. Build SFT first to learn masking, packing, loss, checkpointing, and basic training dynamics.
 2. Build the Phase 1.5 compute-aware post-training pipeline next — rollouts, verifiers, bucketing, the cost ledger, and On-Policy Distillation. This produces the rollout cache and verifier that GRPO will reuse.
-3. Add DPO using the Phase 1.5 preference dataset to learn offline preference-pair optimization without running an online reinforcement-learning loop.
+3. Add DPO using **its own fixed offline preference dataset**, sharing only the verifier ladder and pairwise-loss math with Phase 1.5 (not the data). The offline-DPO vs. on-policy-OPD split is the deliberate comparison axis; collapsing it by sharing the dataset would destroy the experiment.
 4. Add GRPO last, on top of the Phase 1.5 rollout/verifier plumbing, once the verifier and evaluation harness are strong enough to support reward-driven training.
 
 ---

@@ -13,7 +13,7 @@ Implement the rollout module. Given `(checkpoint, prompts, sampling_params)` it 
 ## Scope
 
 **In scope:**
-- `src/finpost/postraining/rollout.py` with a batched sampler.
+- `src/finpost/posttraining/rollout.py` with a batched sampler.
 - `scripts/run_rollout.py` CLI: `--checkpoint`, `--prompts`, `--k`, `--temperature`, `--max-new-tokens`, `--append`.
 - Cache key: `sha256(model_revision || prompt_id || sampling_params_canonical_json)`.
 - Cache file format: jsonl with `(prompt_id, sample_idx, completion, parsed_answer, model_revision, sampling_params_hash, generated_at)`.

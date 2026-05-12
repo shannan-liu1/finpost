@@ -68,7 +68,7 @@ This workstream and [`phase1-compute-aware-post-training`](../phase1-compute-awa
 - OPD uses an **on-policy** preference dataset: rollouts are sampled fresh from the current training policy at each scheduled refresh, with adaptive K on ambiguous prompts.
 
 Both pipelines share:
-- the verifier ladder under `src/finpost/postraining/verifier.py`,
+- the verifier ladder under `src/finpost/posttraining/verifier.py`,
 - the DPO-style pairwise loss math (per-example loss must match within `1e-5` on uniform inputs — the parity test lives here).
 
 Each pipeline owns its own:
