@@ -100,6 +100,18 @@ def test_sample_examples_n_exceeds_pool_raises() -> None:
         _sample_examples(TWENTY_EXAMPLES, n=25, seed=0)
 
 
+def test_sample_examples_n_zero_raises() -> None:
+    """n=0 must raise ValueError rather than silently return an empty list."""
+    with pytest.raises(ValueError, match="n=0 must be at least 1"):
+        _sample_examples(TWENTY_EXAMPLES, n=0, seed=0)
+
+
+def test_sample_examples_n_negative_raises() -> None:
+    """Negative n must raise ValueError."""
+    with pytest.raises(ValueError, match="must be at least 1"):
+        _sample_examples(TWENTY_EXAMPLES, n=-1, seed=0)
+
+
 # =============================================================================
 # 2. Batched-vs-single generation parity
 # =============================================================================
@@ -139,7 +151,8 @@ def test_batched_vs_single_generation_parity() -> None:
     max_new_tokens = 16
 
     # Generate both prompts together in a single batch.
-    batch_result = _generate_batch(
+    # _generate_batch returns (texts, token_count); unpack accordingly.
+    batch_texts, _batch_tokens = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -157,16 +170,16 @@ def test_batched_vs_single_generation_parity() -> None:
             batch_size=1,
             max_new_tokens=max_new_tokens,
             device="cpu",
-        )[0]
+        )[0][0]  # [0] = texts list, [0] = first (only) text in that list
         for p in prompts
     ]
 
     # The new tokens generated must be identical regardless of batch size.
-    assert batch_result[0] == single_results[0], (
-        f"Prompt 0 differs:\n  batched:  {batch_result[0]!r}\n  single:   {single_results[0]!r}"
+    assert batch_texts[0] == single_results[0], (
+        f"Prompt 0 differs:\n  batched:  {batch_texts[0]!r}\n  single:   {single_results[0]!r}"
     )
-    assert batch_result[1] == single_results[1], (
-        f"Prompt 1 differs:\n  batched:  {batch_result[1]!r}\n  single:   {single_results[1]!r}"
+    assert batch_texts[1] == single_results[1], (
+        f"Prompt 1 differs:\n  batched:  {batch_texts[1]!r}\n  single:   {single_results[1]!r}"
     )
 
 
@@ -218,7 +231,8 @@ def test_oom_fallback_halves_and_retries() -> None:
     prompts = ["What is 1 + 1?", "What is 2 + 2?"]
     # With batch_size=2, the first call OOMs. The fallback retries at
     # batch_size=1, which succeeds.
-    results = _generate_batch(
+    # _generate_batch returns (texts, token_count).
+    texts, _token_count = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -228,9 +242,11 @@ def test_oom_fallback_halves_and_retries() -> None:
     )
 
     # We should get back one generated string per prompt.
-    assert len(results) == 2
-    # Both calls happened: the first OOM'd, the second (at batch_size=1) succeeded.
-    assert call_count >= 2
+    assert len(texts) == 2
+    # Exactly three generate calls: first attempt (batch_size=2) OOMed,
+    # then the chunk was split into two halves each run at batch_size=1
+    # (one call per half = two more calls). Total: 3.
+    assert call_count == 3
 
 
 @pytest.mark.slow

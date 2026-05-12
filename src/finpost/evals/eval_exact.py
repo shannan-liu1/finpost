@@ -72,9 +72,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from finpost.evals.sources import REGISTRY, EvalSource
+from finpost.safety import safe_load_model, safe_load_tokenizer
 
 # =============================================================================
 # RunTracker — inline cost and throughput helper (~40 lines)
@@ -155,7 +155,7 @@ class RunTracker:
             end_time=self.end_time,
             elapsed_sec=self.elapsed_sec,
             gpu_type=self.gpu_type,
-            dtype=str(torch.float32),  # updated after model load if needed
+            dtype=str(torch.float32),  # placeholder; run_eval writes cost_summary directly with the correct dtype
             generated_tokens=self.total_generated_tokens,
             tokens_per_second=tokens_per_second,
             estimated_cost_usd=estimated_cost_usd,
@@ -193,6 +193,10 @@ def _sample_examples(
         silently returning a truncated list — silent truncation would
         change the evaluation surface without the caller knowing.
     """
+    if n < 1:
+        raise ValueError(
+            f"n={n} must be at least 1. Pass --n 1 or greater."
+        )
     if n > len(examples):
         raise ValueError(
             f"n={n} exceeds pool size={len(examples)}. "
@@ -220,12 +224,17 @@ def _generate_batch(
     batch_size: int,
     max_new_tokens: int,
     device: str,
-) -> list[str]:
+) -> tuple[list[str], int]:
     """Generate continuations for ``prompts`` in batches.
 
     Processes ``prompts`` in chunks of at most ``batch_size``. On
     ``torch.cuda.OutOfMemoryError``, halves the batch size and retries
     the same chunk. If batch_size reaches 1 and still OOMs, raises.
+
+    After an OOM forces a halve, subsequent chunks start from the
+    reduced size rather than resetting to the original. This avoids
+    repeatedly triggering OOM on a device that already proved the
+    original size was too large.
 
     Parameters
     ----------
@@ -237,7 +246,8 @@ def _generate_batch(
     prompts
         List of plain text prompts.
     batch_size
-        Starting batch size. Will be halved on OOM.
+        Starting batch size. Will be halved on OOM and the new lower
+        value is carried forward to subsequent chunks.
     max_new_tokens
         Token budget for the continuation (set per source in the registry).
     device
@@ -245,16 +255,23 @@ def _generate_batch(
 
     Returns
     -------
-    A list of generated strings (new tokens only, decoded), one per prompt.
+    A tuple of (generated_texts, total_new_tokens) where generated_texts
+    is a list of decoded new-token strings (one per prompt) and
+    total_new_tokens is the number of new token positions generated
+    (counted from the output tensor shape, not from a re-encode round-trip).
     """
     all_generated: list[str] = []
+    total_tokens: int = 0
 
-    # Walk through all prompts in chunks of ``batch_size``.
+    # Walk through all prompts in chunks of ``current_batch_size``.
+    # The batch size may shrink during iteration if an OOM is encountered;
+    # we carry the reduced size forward so we never re-trigger OOM on the
+    # same device with the same size.
     i = 0
     current_batch_size = batch_size
     while i < len(prompts):
         chunk = prompts[i : i + current_batch_size]
-        generated = _generate_chunk_with_oom_fallback(
+        generated, chunk_tokens, current_batch_size = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=chunk,
@@ -263,9 +280,10 @@ def _generate_batch(
             device=device,
         )
         all_generated.extend(generated)
+        total_tokens += chunk_tokens
         i += len(chunk)
 
-    return all_generated
+    return all_generated, total_tokens
 
 
 def _generate_chunk_with_oom_fallback(
@@ -275,7 +293,7 @@ def _generate_chunk_with_oom_fallback(
     batch_size: int,
     max_new_tokens: int,
     device: str,
-) -> list[str]:
+) -> tuple[list[str], int, int]:
     """Generate a single chunk, halving batch size on OOM.
 
     Recursively halves ``batch_size`` and splits the chunk in two until
@@ -292,7 +310,10 @@ def _generate_chunk_with_oom_fallback(
 
     Returns
     -------
-    Generated strings (new tokens only), one per prompt.
+    A tuple of (generated_texts, total_new_tokens, effective_batch_size).
+    ``effective_batch_size`` is the smallest batch size that actually
+    succeeded; the outer loop in ``_generate_batch`` carries this
+    forward so subsequent chunks start at the reduced size.
 
     Raises
     ------
@@ -300,13 +321,14 @@ def _generate_chunk_with_oom_fallback(
         If batch_size is already 1 and generation still OOMs.
     """
     try:
-        return _tokenize_and_generate(
+        texts, token_count = _tokenize_and_generate(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts,
             max_new_tokens=max_new_tokens,
             device=device,
         )
+        return texts, token_count, batch_size
     except torch.cuda.OutOfMemoryError:
         if batch_size <= 1:
             # Can't go smaller. Fail loudly — the caller asked for this
@@ -328,7 +350,7 @@ def _generate_chunk_with_oom_fallback(
 
         # Split the chunk into two halves and recurse on each.
         mid = len(prompts) // 2 if len(prompts) > 1 else 1
-        left = _generate_chunk_with_oom_fallback(
+        left_texts, left_tokens, left_bs = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts[:mid],
@@ -336,7 +358,7 @@ def _generate_chunk_with_oom_fallback(
             max_new_tokens=max_new_tokens,
             device=device,
         )
-        right = _generate_chunk_with_oom_fallback(
+        right_texts, right_tokens, right_bs = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts[mid:],
@@ -344,7 +366,10 @@ def _generate_chunk_with_oom_fallback(
             max_new_tokens=max_new_tokens,
             device=device,
         )
-        return left + right
+        # Return the minimum effective batch size so the outer loop can
+        # carry it forward to prevent re-triggering OOM on later chunks.
+        effective_bs = min(left_bs, right_bs)
+        return left_texts + right_texts, left_tokens + right_tokens, effective_bs
 
 
 def _tokenize_and_generate(
@@ -353,7 +378,7 @@ def _tokenize_and_generate(
     prompts: list[str],
     max_new_tokens: int,
     device: str,
-) -> list[str]:
+) -> tuple[list[str], int]:
     """Tokenize a batch of prompts, generate, decode only the new tokens.
 
     This is the inner loop that does the actual HuggingFace model call.
@@ -375,7 +400,16 @@ def _tokenize_and_generate(
 
     Returns
     -------
-    A list of decoded new-token strings, one per prompt.
+    A tuple of (generated_texts, total_new_tokens).
+    ``generated_texts`` is a list of decoded new-token strings, one per
+    prompt. ``total_new_tokens`` is the total number of new token
+    positions in the output tensor (batch_size * new_token_cols), which
+    counts every position including trailing EOS/pad tokens. This
+    reflects the actual compute spent: model.generate runs all decode
+    steps until every sequence in the batch has finished, so trailing
+    positions are real forward passes. Counting from the tensor shape
+    avoids the under-count that a decode->encode round-trip produces
+    (EOS is stripped by skip_special_tokens, so re-encoding drops it).
     """
     # Tokenize with left-padding to the longest prompt in this batch.
     encoding = tokenizer(
@@ -403,12 +437,18 @@ def _tokenize_and_generate(
     # Slice off the prompt tokens to get only the newly generated tokens.
     new_token_ids = output_ids[:, prompt_len:]
 
+    # Count total new token positions directly from the tensor shape.
+    # new_token_ids.numel() == batch_size * new_token_cols. Each position
+    # corresponds to a real forward pass (model.generate runs until all
+    # sequences in the batch finish, not until any single one does).
+    total_new_tokens = new_token_ids.numel()
+
     # Decode each row separately. skip_special_tokens=True strips pad/eos.
     generated_texts = [
         tokenizer.decode(row, skip_special_tokens=True)
         for row in new_token_ids
     ]
-    return generated_texts
+    return generated_texts, total_new_tokens
 
 
 # =============================================================================
@@ -664,8 +704,14 @@ def _load_model_and_tokenizer(
 ) -> tuple[Any, Any]:
     """Load a model and tokenizer from a local path or Hugging Face Hub ID.
 
-    Uses ``use_safetensors=True`` by default, consistent with the
-    project's SECURITY.md policy: refuse pickle-format weight files.
+    Delegates to ``finpost.safety.safe_load_model`` and
+    ``finpost.safety.safe_load_tokenizer``, which enforce defensive
+    defaults (trust_remote_code=False, use_safetensors=True).
+
+    The only deliberate exception is ``sshleifer/tiny-gpt2``, a test
+    model that ships only legacy .bin (pickle) weights with no safetensors
+    variant. That model is used exclusively in unit tests; production Phase
+    1 models (Qwen, Gemma) ship safetensors and are unaffected.
 
     Tokenizer is set to left-padding (required for batched decoder-only
     generation; see ``_tokenize_and_generate`` for the full rationale).
@@ -683,7 +729,7 @@ def _load_model_and_tokenizer(
     -------
     (model, tokenizer) both moved / configured for ``device``.
     """
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = safe_load_tokenizer(model_path)
 
     # Left-padding: decoder-only models must have the last prompt token
     # at the right edge of the input so the first generated token
@@ -695,20 +741,20 @@ def _load_model_and_tokenizer(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # ``use_safetensors=True`` refuses to load pickle-format .bin weights.
-    # For tiny-gpt2 (which ships .bin only), we fall back to the default
-    # auto-detection by catching the error. Real Phase 1 models (Qwen) ship
-    # safetensors and succeed on the first try.
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
+    # tiny-gpt2 (sshleifer/tiny-gpt2) ships only .bin (pickle) weights and
+    # has no safetensors variant. It is used exclusively in unit tests.
+    # For all production models (Qwen, Gemma), use_safetensors=True (the
+    # safe_load_model default) refuses pickle weights per SECURITY.md policy.
+    if "tiny-gpt2" in model_path:
+        # Override: use_safetensors=False because this test model ships no
+        # safetensors variant. Justification: test-only, not used in production.
+        model = safe_load_model(
             model_path,
+            use_safetensors=False,
             dtype=dtype,
-            use_safetensors=True,
         ).to(device)
-    except Exception:
-        # Fallback for models that ship only legacy .bin weights (e.g. tiny-gpt2
-        # used for unit tests). The fallback is intentional and documented.
-        model = AutoModelForCausalLM.from_pretrained(
+    else:
+        model = safe_load_model(
             model_path,
             dtype=dtype,
         ).to(device)
@@ -717,12 +763,17 @@ def _load_model_and_tokenizer(
     return model, tokenizer
 
 
-def _unload_model(model: Any) -> None:
-    """Delete model weights and release GPU memory.
+def _free_cuda_cache() -> None:
+    """Release cached (but currently unused) GPU memory back to the allocator.
 
-    Called between checkpoints so only one model occupies VRAM at a time.
+    Call this after ``del model, tokenizer`` in the caller's scope.
+    Note: ``del`` must happen at the call site, not inside a wrapper function.
+    Python's reference semantics mean that passing an object to a function and
+    deleting the local parameter only removes the function's binding — the
+    caller's variable still holds a live reference and keeps the weights in
+    memory. The ``del`` that actually frees memory must rebind the variable
+    in the same scope that owns it.
     """
-    del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -764,22 +815,14 @@ def _evaluate_one_source(
     prompts = [ex.prompt for ex in examples]
 
     # Generate all continuations for this source in one batched call.
-    # _generate_batch handles the chunking and OOM fallback internally.
-    generated_texts = _generate_batch(
+    # _generate_batch handles the chunking, OOM fallback, and token counting.
+    generated_texts, total_new_tokens = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
         batch_size=batch_size,
         max_new_tokens=source.default_max_new_tokens,
         device=device,
-    )
-
-    # Count newly generated tokens for cost tracking.
-    # We re-tokenize to get an accurate token count (decode→encode is the
-    # safest way; tokenizer.encode does not add special tokens by default).
-    total_new_tokens = sum(
-        len(tokenizer.encode(gen, add_special_tokens=False))
-        for gen in generated_texts
     )
 
     # Score each example and build the per-row detail dict.
@@ -847,6 +890,15 @@ def run_eval(
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Design note on GPU memory management:
+    # After evaluating a checkpoint we ``del model, tokenizer`` here in
+    # run_eval's scope. That is the ``del`` that actually frees memory.
+    # Passing the model to a helper function and doing ``del`` inside the
+    # helper only removes the helper's local binding; the variable here still
+    # holds a live reference and keeps the weights allocated. The explicit
+    # ``del`` below, followed by _free_cuda_cache(), is what ensures peak
+    # GPU footprint is one model at a time — essential on free-tier T4 GPUs.
 
     # Resolve sources from the registry before touching any model weights.
     # Fail early if an unknown source name was requested.
@@ -956,9 +1008,13 @@ def run_eval(
                     "elapsed_sec": round(elapsed, 3),
                 })
 
-            # Done with this checkpoint. Free GPU memory before the next one.
+            # Done with this checkpoint. Rebind model and tokenizer here
+            # (in run_eval's scope) so the reference count drops to zero and
+            # the weights are freed. See the design note near the top of this
+            # function for why del must happen here rather than in a helper.
             print(f"  Unloading {ckpt_name!r}")
-            _unload_model(model)
+            del model, tokenizer
+            _free_cuda_cache()
 
     # Write the three summary files (happens outside the tracker context manager,
     # after tracker.elapsed_sec has been set by __exit__).
