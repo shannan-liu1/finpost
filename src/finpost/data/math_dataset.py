@@ -138,18 +138,19 @@ def _parse_no_brace_boxed(string: str) -> str | None:
 # =============================================================================
 
 
-def parse_math_final_answer(solution_text: str) -> str:
-    """Extract the final answer from a MATH solution.
+def try_parse_math_final_answer(solution_text: str) -> str | None:
+    """Extract the final answer from a MATH solution, or return None.
 
     Tries the canonical Hendrycks parser first (handles ``\\boxed{...}``,
     ``\\fbox{...}``, with proper brace nesting). If that returns None,
-    falls back to the no-brace form ``\\boxed N``.
+    falls back to the no-brace form ``\\boxed N``. Returns ``None`` if
+    nothing extracts.
 
-    Raises
-    ------
-    ValueError
-        If no extraction succeeds in any form. The error message
-        includes the full solution for debugging.
+    Use this when failed extraction is a normal outcome (eval-time
+    grading of model generations, where some outputs lack a valid
+    marker). Use ``parse_math_final_answer`` when failed extraction is
+    a data error (gold-solution loading, where every example must
+    extract).
     """
     boxed_string = _last_boxed_only_string(solution_text)
     if boxed_string is not None:
@@ -157,13 +158,28 @@ def parse_math_final_answer(solution_text: str) -> str:
         if content is not None:
             return content
 
-    no_brace_content = _parse_no_brace_boxed(solution_text)
-    if no_brace_content is not None:
-        return no_brace_content
+    return _parse_no_brace_boxed(solution_text)
 
-    raise ValueError(
-        f"MATH solution: no \\boxed answer extractable in any known form: {solution_text!r}"
-    )
+
+def parse_math_final_answer(solution_text: str) -> str:
+    """Extract the final answer from a MATH solution.
+
+    Thin wrapper over ``try_parse_math_final_answer`` that raises when
+    no answer can be extracted. Used for loading gold solutions where
+    every example is required to parse.
+
+    Raises
+    ------
+    ValueError
+        If no extraction succeeds in any form. The error message
+        includes the full solution for debugging.
+    """
+    result = try_parse_math_final_answer(solution_text)
+    if result is None:
+        raise ValueError(
+            f"MATH solution: no \\boxed answer extractable in any known form: {solution_text!r}"
+        )
+    return result
 
 
 def parse_math_difficulty(level_text: str) -> int | None:

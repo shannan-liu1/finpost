@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Callable
 
 from finpost.data.gsm8k import load_gsm8k
-from finpost.data.math_dataset import load_math
+from finpost.data.math_dataset import load_math, try_parse_math_final_answer
 from finpost.data.schema import Example
 
 # =============================================================================
@@ -325,19 +325,25 @@ def score_gsm8k(predicted: str | None, gold: str) -> bool:
 def extract_math_answer(generation: str) -> str | None:
     """Extract the final answer from a MATH-format generation.
 
-    MATH's gold convention is ``\\boxed{<answer>}``. The extractor
-    finds the *last* ``\\boxed{...}`` in the generation, respecting
-    balanced braces (important for nested LaTeX like ``\\frac{1}{2}``),
-    and returns the inner content normalized by:
+    Delegates the actual brace/no-brace parsing to
+    ``try_parse_math_final_answer`` so eval-time extraction stays
+    symmetric with the data-loader: ``\\boxed{...}``, ``\\fbox{...}``,
+    and the no-brace LaTeX form ``\\boxed N`` are all accepted. Prior
+    to this unification the eval extractor only accepted
+    ``\\boxed{...}`` with a literal opening brace, which silently
+    marked otherwise-correct ``\\fbox`` and ``\\boxed N`` outputs as
+    parse-fail.
 
-    - Normalizing Unicode minus (U+2212) to ASCII hyphen. Models
-      occasionally emit U+2212 when copying from LaTeX or other typeset
-      math contexts.
-    - Stripping leading and trailing whitespace.
-    - Stripping outer ``$`` if present.
+    Post-normalizations applied here (and not in the data loader,
+    which trusts its gold solutions to be already-clean LaTeX):
 
-    Returns ``None`` if no ``\\boxed{...}`` is found or if the braces
-    are unbalanced or if nothing remains after normalization.
+    - Unicode minus (U+2212) normalized to ASCII hyphen. Models that
+      copy from typeset math contexts sometimes emit U+2212.
+    - Leading and trailing whitespace stripped.
+    - Outer ``$...$`` math-mode wrapping stripped if present.
+
+    Returns ``None`` if no marker is found, if braces are unbalanced,
+    or if nothing remains after normalization.
 
     Parameters
     ----------
@@ -352,38 +358,9 @@ def extract_math_answer(generation: str) -> str | None:
     # MATH gold answers use.
     generation = generation.replace("−", "-")
 
-    if "\\boxed" not in generation:
+    inner = try_parse_math_final_answer(generation)
+    if inner is None:
         return None
-
-    # Find the LAST occurrence of \boxed.
-    last_idx = generation.rfind("\\boxed")
-
-    # Expect the opening brace immediately after \boxed.
-    if last_idx + len("\\boxed") >= len(generation):
-        return None
-    if generation[last_idx + len("\\boxed")] != "{":
-        return None
-
-    # Count braces to find the matching closing brace.
-    brace_start = last_idx + len("\\boxed")
-    brace_count = 0
-    closing_idx = None
-
-    for i in range(brace_start, len(generation)):
-        if generation[i] == "{":
-            brace_count += 1
-        elif generation[i] == "}":
-            brace_count -= 1
-            if brace_count == 0:
-                closing_idx = i
-                break
-
-    # If braces are unbalanced, return None.
-    if closing_idx is None:
-        return None
-
-    # Extract the content between the braces (not including the braces).
-    inner = generation[brace_start + 1 : closing_idx]
 
     # Normalize: strip whitespace and outer $ if present.
     inner = inner.strip()

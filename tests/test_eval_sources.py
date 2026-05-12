@@ -173,10 +173,30 @@ def test_math_returns_none_on_unmatched_braces() -> None:
     assert result is None
 
 
-def test_math_returns_none_when_boxed_has_no_opening_brace() -> None:
-    """\\boxed appearing without a following { should return None, not crash."""
-    result = REGISTRY["math"].extract_answer(r"the answer is \boxed and then more text")
-    assert result is None
+def test_math_extracts_fbox_answer() -> None:
+    r"""\fbox{N} is accepted (symmetric with the data loader)."""
+    math = REGISTRY["math"]
+    result = math.extract_answer(r"after working it out: \fbox{42}")
+    assert result == "42"
+
+
+def test_math_extracts_fbox_with_nested_braces() -> None:
+    r"""\fbox handles nested LaTeX just like \boxed."""
+    math = REGISTRY["math"]
+    result = math.extract_answer(r"final: \fbox{\frac{1}{2}}")
+    assert result == r"\frac{1}{2}"
+
+
+def test_math_extracts_no_brace_boxed_in_math_mode() -> None:
+    r"""\boxed N (LaTeX no-brace form) extracts up to the next $.
+
+    The dataset uses this form in some gold solutions; the data
+    loader accepts it, so the eval extractor must accept it too or
+    correct outputs get marked parse-fail.
+    """
+    math = REGISTRY["math"]
+    result = math.extract_answer(r"... our answer is $\boxed 42$.")
+    assert result == "42"
 
 
 def test_math_extracts_with_literal_braces_inside() -> None:
