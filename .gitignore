@@ -61,4 +61,5 @@ secrets/
 # the entries below explicitly exclude ad-hoc subdirectories that
 # happen to live there but aren't workstreams.
 STUDY.md
+STUDY.html
 .scratch/hatch-pet/
