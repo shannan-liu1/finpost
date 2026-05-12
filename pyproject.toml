@@ -18,7 +18,7 @@ authors = [{ name = "Shannan" }]
 # does not break installs; tight enough that a major version change does.
 dependencies = [
     "torch>=2.5,<3",            # tensors, autograd, the actual training engine
-    "transformers>=4.50,<5",    # Gemma model, tokenizer, generation utilities
+    "transformers>=4.56,<5",    # Gemma model, tokenizer, generation utilities; 4.56+ required for dtype= kwarg in from_pretrained
     "datasets>=3.0,<4",         # GSM8K and MATH downloaders
     "accelerate>=1.0,<2",       # device placement, mixed precision helpers
     "numpy>=1.26,<3",           # array math used by graders and bootstraps
