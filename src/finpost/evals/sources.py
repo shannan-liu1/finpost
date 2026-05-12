@@ -104,10 +104,15 @@ def extract_gsm8k_answer(generation: str) -> str | None:
 
 
 def score_gsm8k(predicted: str | None, gold: str) -> bool:
-    """Score a GSM8K answer via exact string match after normalization.
+    """Score a GSM8K answer via exact string match, with a numeric fallback.
 
-    Both strings are compared as-is (no additional normalization here;
-    the extractor is responsible for normalization on the model side).
+    The extractor is responsible for normalization on the model side.
+    After exact string comparison, a float-equality fallback handles the
+    common case where the model emits ``"42.0"`` when gold is ``"42"``,
+    or uses scientific notation like ``"4.2e3"`` for ``"4200"``. Both
+    sides must parse as float for the fallback to apply; if either side
+    fails to parse, the fallback returns ``False`` (non-numeric strings
+    are not numerically equal to a number).
 
     Parameters
     ----------
@@ -119,12 +124,18 @@ def score_gsm8k(predicted: str | None, gold: str) -> bool:
 
     Returns
     -------
-    ``True`` if predicted and gold match exactly, ``False`` otherwise.
-    Predicted ``None`` is always ``False``.
+    ``True`` if predicted and gold match exactly or numerically,
+    ``False`` otherwise. Predicted ``None`` is always ``False``.
     """
     if predicted is None:
         return False
-    return predicted == gold
+    if predicted == gold:
+        return True
+    # Numeric fallback: handles "42.0" vs "42", "4.2e3" vs "4200", etc.
+    try:
+        return float(predicted) == float(gold)
+    except (ValueError, TypeError):
+        return False
 
 
 # =============================================================================
@@ -201,9 +212,13 @@ def extract_math_answer(generation: str) -> str | None:
 
 
 def score_math(predicted: str | None, gold: str) -> bool:
-    """Score a MATH answer via exact string match.
+    """Score a MATH answer via exact string match, with a numeric fallback.
 
-    Both strings are compared as-is (no additional normalization).
+    After exact string comparison, a float-equality fallback handles
+    purely numeric MATH answers where the model or gold uses a different
+    decimal representation (e.g., ``"42.0"`` vs ``"42"``). LaTeX
+    fractions and other non-numeric strings will fail float parsing and
+    fall through to ``False`` without any change to existing behavior.
 
     Parameters
     ----------
@@ -215,12 +230,20 @@ def score_math(predicted: str | None, gold: str) -> bool:
 
     Returns
     -------
-    ``True`` if predicted and gold match exactly, ``False`` otherwise.
-    Predicted ``None`` is always ``False``.
+    ``True`` if predicted and gold match exactly or numerically,
+    ``False`` otherwise. Predicted ``None`` is always ``False``.
     """
     if predicted is None:
         return False
-    return predicted == gold
+    if predicted == gold:
+        return True
+    # Numeric fallback: handles "42.0" vs "42", "4.2e3" vs "4200", etc.
+    # LaTeX strings (e.g., \frac{1}{2}) won't parse as float and fall
+    # through to False, which is correct.
+    try:
+        return float(predicted) == float(gold)
+    except (ValueError, TypeError):
+        return False
 
 
 # =============================================================================

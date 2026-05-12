@@ -235,6 +235,61 @@ def test_math_score_none_is_always_wrong() -> None:
 
 
 # =============================================================================
+# GSM8K numeric-equality fallback (Bug 2)
+# =============================================================================
+
+
+def test_gsm8k_score_decimal_zero_equals_integer() -> None:
+    """Model emitting '42.0' when gold is '42' should score True."""
+    assert REGISTRY["gsm8k"].score("42.0", "42") is True
+
+
+def test_gsm8k_score_scientific_notation() -> None:
+    """'4.2e3' and '4200' are numerically equal — should score True."""
+    assert REGISTRY["gsm8k"].score("4.2e3", "4200") is True
+
+
+def test_gsm8k_score_numeric_mismatch_still_false() -> None:
+    """'42.5' vs '42' are numerically different — still False."""
+    assert REGISTRY["gsm8k"].score("42.5", "42") is False
+
+
+def test_gsm8k_score_none_numeric_fallback() -> None:
+    """None predicted is always False, even with numeric fallback present."""
+    assert REGISTRY["gsm8k"].score(None, "42") is False
+
+
+def test_gsm8k_score_non_numeric_strings() -> None:
+    """Non-parseable strings fall through to string equality — still False."""
+    assert REGISTRY["gsm8k"].score("forty-two", "42") is False
+
+
+def test_math_score_decimal_zero_equals_integer() -> None:
+    """MATH: '42.0' vs '42' should score True via numeric fallback."""
+    assert REGISTRY["math"].score("42.0", "42") is True
+
+
+def test_math_score_scientific_notation() -> None:
+    """MATH: '4.2e3' vs '4200' numerically equal — should score True."""
+    assert REGISTRY["math"].score("4.2e3", "4200") is True
+
+
+def test_math_score_numeric_mismatch_still_false() -> None:
+    """MATH: '42.5' vs '42' are numerically different — still False."""
+    assert REGISTRY["math"].score("42.5", "42") is False
+
+
+def test_math_score_none_numeric_fallback() -> None:
+    """MATH: None predicted is always False."""
+    assert REGISTRY["math"].score(None, "42") is False
+
+
+def test_math_score_non_numeric_strings() -> None:
+    """MATH: Non-parseable strings fall through to string equality — still False."""
+    assert REGISTRY["math"].score("forty-two", "42") is False
+
+
+# =============================================================================
 # default_max_new_tokens
 # =============================================================================
 
