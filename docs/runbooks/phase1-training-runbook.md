@@ -224,6 +224,70 @@ If this fails:
 - diagnose infrastructure first: config, data loader, masking, optimizer, checkpointing, or resume.
 - do not launch Qwen.
 
+## Gate 3.5 - Evaluation harness smoke test
+
+Purpose: verify that the full eval pipeline (CLI + source registry + answer extractors + output writers) works end-to-end on a CPU-friendly tiny model and real GSM8K and MATH data. This is the "all green locally" gate before any paid GPU spin-up for evaluation.
+
+Run from the repository root:
+
+```bash
+WANDB_MODE=offline \
+python -m finpost.evals.eval_exact \
+  --checkpoints tiny=sshleifer/tiny-gpt2 \
+  --sources gsm8k math \
+  --n 10 \
+  --seed 42 \
+  --out-dir results/evals/smoke_tiny_gpt2/ \
+  --batch-size-gsm8k 2 \
+  --batch-size-math 2 \
+  --device cpu
+```
+
+Or use the automated smoke test in the minitest suite:
+
+```bash
+./scripts/local_phase1_minitest.sh
+```
+
+PowerShell equivalent after activating `.venv`:
+
+```powershell
+$env:WANDB_MODE = "offline"
+python -m finpost.evals.eval_exact `
+  --checkpoints tiny=sshleifer/tiny-gpt2 `
+  --sources gsm8k math `
+  --n 10 `
+  --seed 42 `
+  --out-dir results/evals/smoke_tiny_gpt2/ `
+  --batch-size-gsm8k 2 `
+  --batch-size-math 2 `
+  --device cpu
+```
+
+This should finish in under 2 minutes on a modern CPU. `sshleifer/tiny-gpt2` is ~10 MB.
+
+Pass criteria:
+- smoke command completes without error on CPU,
+- all six expected artifact files exist: `accuracy_summary.json`, `accuracy_summary.csv`, `details_tiny_gsm8k.csv`, `details_tiny_math.csv`, `run_metadata.json`, `cost_summary.json`,
+- `accuracy_summary.csv` has 3 lines (1 header + 2 data rows for `{tiny} × {gsm8k, math}`),
+- `details_tiny_gsm8k.csv` and `details_tiny_math.csv` each contain 10 evaluated examples,
+- `run_metadata.json` contains populated `dtype`, `device`, `seed: 42`, and `git_short_sha` fields,
+- `cost_summary.json` contains `elapsed_sec > 0`, `generated_tokens > 0`, `tokens_per_second > 0`, and `estimated_cost_usd: null`,
+- second run with the same seed produces byte-identical `details_*.csv` files.
+
+Proof artifacts:
+- output directory path (`results/evals/smoke_tiny_gpt2/`),
+- minitest or manual command output,
+- note on parse_success_rate (it will be near zero on tiny-gpt2 for math — that is expected and is exactly what the test validates).
+
+Notes:
+- tiny-gpt2 has only 4 attention heads and 4 layers. Generation on math will be incoherent. The point is to test the infrastructure, not model quality.
+- If parse_success_rate is 0% on math, that is a success for this test, not a failure. The metric we validate is that the pipeline runs and records parse failures correctly.
+
+If this fails:
+- do not launch eval on real models. Fix the eval harness first.
+- diagnose: can the CLI parse arguments? Does the source registry load GSM8K and MATH? Do answer extractors run? Are output writers working?
+
 ## Gate 4 - Qwen 0.5B Supervised Fine-Tuning soft launch
 
 Purpose: prove the real Phase 1 base model loads and trains through the exact same production trainer path as TinyGPT. The default target environment is free Google Colab with a T4-class GPU; paid GPU rental is fallback, not the first plan.
