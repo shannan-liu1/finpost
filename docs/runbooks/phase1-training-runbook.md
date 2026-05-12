@@ -271,7 +271,7 @@ Pass criteria:
 - all six expected artifact files exist: `accuracy_summary.json`, `accuracy_summary.csv`, `details_tiny_gsm8k.csv`, `details_tiny_math.csv`, `run_metadata.json`, `cost_summary.json`,
 - `accuracy_summary.csv` has 3 lines (1 header + 2 data rows for `{tiny} × {gsm8k, math}`),
 - `details_tiny_gsm8k.csv` and `details_tiny_math.csv` each contain 10 evaluated examples,
-- `run_metadata.json` contains populated `dtype`, `device`, `seed: 42`, and `git_short_sha` fields,
+- `run_metadata.json` contains populated `dtype`, `device`, `seed: 42`, and `git_sha` fields,
 - `cost_summary.json` contains `elapsed_sec > 0`, `generated_tokens > 0`, `tokens_per_second > 0`, and `estimated_cost_usd: null`,
 - second run with the same seed produces byte-identical `details_*.csv` files.
 
