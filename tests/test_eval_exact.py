@@ -306,6 +306,7 @@ _EXPECTED_COST_FIELDS = {
     "start_time",
     "end_time",
     "elapsed_sec",
+    "generation_seconds",
     "gpu_type",
     "dtype",
     "generated_tokens",
@@ -451,10 +452,11 @@ def test_cost_summary_json_has_required_fields(tmp_path: Path) -> None:
         start_time="2026-05-11T10:00:00",
         end_time="2026-05-11T10:01:00",
         elapsed_sec=60.0,
+        generation_seconds=55.0,
         gpu_type="CPU",
         dtype="float32",
         generated_tokens=500,
-        tokens_per_second=8.3,
+        tokens_per_second=500 / 55.0,
         estimated_cost_usd=None,
     )
 
@@ -473,10 +475,11 @@ def test_cost_summary_estimated_cost_null_when_not_supplied(tmp_path: Path) -> N
         start_time="2026-05-11T10:00:00",
         end_time="2026-05-11T10:00:10",
         elapsed_sec=10.0,
+        generation_seconds=9.0,
         gpu_type="CPU",
         dtype="float32",
         generated_tokens=50,
-        tokens_per_second=5.0,
+        tokens_per_second=50 / 9.0,
         estimated_cost_usd=None,
     )
 
@@ -493,10 +496,11 @@ def test_cost_summary_estimated_cost_populated_when_supplied(tmp_path: Path) -> 
         start_time="2026-05-11T10:00:00",
         end_time="2026-05-11T11:00:00",
         elapsed_sec=3600.0,
+        generation_seconds=3550.0,
         gpu_type="Tesla T4",
         dtype="bfloat16",
         generated_tokens=10000,
-        tokens_per_second=2.77,
+        tokens_per_second=10000 / 3550.0,
         estimated_cost_usd=1.39,
     )
 

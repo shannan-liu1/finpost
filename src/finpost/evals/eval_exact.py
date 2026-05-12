@@ -197,6 +197,7 @@ class RunTracker:
             start_time=self.start_time,
             end_time=self.end_time,
             elapsed_sec=self.elapsed_sec,
+            generation_seconds=self.elapsed_sec,  # placeholder; run_eval bypasses write() and passes the real value
             gpu_type=self.gpu_type,
             dtype=str(torch.float32),  # placeholder; run_eval writes cost_summary directly with the correct dtype
             generated_tokens=self.total_generated_tokens,
@@ -267,7 +268,7 @@ def _generate_batch(
     batch_size: int,
     max_new_tokens: int,
     device: str,
-) -> tuple[list[str], int]:
+) -> tuple[list[str], int, float]:
     """Generate continuations for ``prompts`` in batches.
 
     Processes ``prompts`` in chunks of at most ``batch_size``. On
@@ -298,13 +299,16 @@ def _generate_batch(
 
     Returns
     -------
-    A tuple of (generated_texts, total_new_tokens) where generated_texts
-    is a list of decoded new-token strings (one per prompt) and
-    total_new_tokens is the number of new token positions generated
-    (counted from the output tensor shape, not from a re-encode round-trip).
+    A tuple of (generated_texts, total_new_tokens, generation_seconds)
+    where generated_texts is a list of decoded new-token strings (one
+    per prompt), total_new_tokens is the number of new token positions
+    generated (counted from the output tensor shape, not from a
+    re-encode round-trip), and generation_seconds is the total time
+    spent inside ``model.generate()`` across all chunks.
     """
     all_generated: list[str] = []
     total_tokens: int = 0
+    total_gen_sec: float = 0.0
 
     # Walk through all prompts in chunks of ``current_batch_size``.
     # The batch size may shrink during iteration if an OOM is encountered;
@@ -314,7 +318,7 @@ def _generate_batch(
     current_batch_size = batch_size
     while i < len(prompts):
         chunk = prompts[i : i + current_batch_size]
-        generated, chunk_tokens, current_batch_size = _generate_chunk_with_oom_fallback(
+        generated, chunk_tokens, current_batch_size, chunk_gen_sec = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=chunk,
@@ -324,9 +328,10 @@ def _generate_batch(
         )
         all_generated.extend(generated)
         total_tokens += chunk_tokens
+        total_gen_sec += chunk_gen_sec
         i += len(chunk)
 
-    return all_generated, total_tokens
+    return all_generated, total_tokens, total_gen_sec
 
 
 def _generate_chunk_with_oom_fallback(
@@ -336,7 +341,7 @@ def _generate_chunk_with_oom_fallback(
     batch_size: int,
     max_new_tokens: int,
     device: str,
-) -> tuple[list[str], int, int]:
+) -> tuple[list[str], int, int, float]:
     """Generate a single chunk, halving batch size on OOM.
 
     Recursively halves ``batch_size`` and splits the chunk in two until
@@ -353,10 +358,13 @@ def _generate_chunk_with_oom_fallback(
 
     Returns
     -------
-    A tuple of (generated_texts, total_new_tokens, effective_batch_size).
+    A tuple of (generated_texts, total_new_tokens, effective_batch_size,
+    generation_seconds).
     ``effective_batch_size`` is the smallest batch size that actually
     succeeded; the outer loop in ``_generate_batch`` carries this
     forward so subsequent chunks start at the reduced size.
+    ``generation_seconds`` is the total time spent inside
+    ``model.generate()`` for this chunk (summed across recursive halves).
 
     Raises
     ------
@@ -368,17 +376,17 @@ def _generate_chunk_with_oom_fallback(
     # Without this check _tokenize_and_generate would crash, and the zip
     # in _evaluate_one_source would produce a length-mismatch error.
     if not prompts:
-        return [], 0, batch_size
+        return [], 0, batch_size, 0.0
 
     try:
-        texts, token_count = _tokenize_and_generate(
+        texts, token_count, gen_sec = _tokenize_and_generate(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts,
             max_new_tokens=max_new_tokens,
             device=device,
         )
-        return texts, token_count, batch_size
+        return texts, token_count, batch_size, gen_sec
     except torch.cuda.OutOfMemoryError:
         if batch_size <= 1:
             # Can't go smaller. Fail loudly — the caller asked for this
@@ -400,7 +408,7 @@ def _generate_chunk_with_oom_fallback(
 
         # Split the chunk into two halves and recurse on each.
         mid = len(prompts) // 2 if len(prompts) > 1 else 1
-        left_texts, left_tokens, left_bs = _generate_chunk_with_oom_fallback(
+        left_texts, left_tokens, left_bs, left_gen_sec = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts[:mid],
@@ -408,7 +416,7 @@ def _generate_chunk_with_oom_fallback(
             max_new_tokens=max_new_tokens,
             device=device,
         )
-        right_texts, right_tokens, right_bs = _generate_chunk_with_oom_fallback(
+        right_texts, right_tokens, right_bs, right_gen_sec = _generate_chunk_with_oom_fallback(
             model=model,
             tokenizer=tokenizer,
             prompts=prompts[mid:],
@@ -419,7 +427,8 @@ def _generate_chunk_with_oom_fallback(
         # Return the minimum effective batch size so the outer loop can
         # carry it forward to prevent re-triggering OOM on later chunks.
         effective_bs = min(left_bs, right_bs)
-        return left_texts + right_texts, left_tokens + right_tokens, effective_bs
+        total_gen_sec = left_gen_sec + right_gen_sec
+        return left_texts + right_texts, left_tokens + right_tokens, effective_bs, total_gen_sec
 
 
 def _tokenize_and_generate(
@@ -428,7 +437,7 @@ def _tokenize_and_generate(
     prompts: list[str],
     max_new_tokens: int,
     device: str,
-) -> tuple[list[str], int]:
+) -> tuple[list[str], int, float]:
     """Tokenize a batch of prompts, generate, decode only the new tokens.
 
     This is the inner loop that does the actual HuggingFace model call.
@@ -450,7 +459,7 @@ def _tokenize_and_generate(
 
     Returns
     -------
-    A tuple of (generated_texts, total_new_tokens).
+    A tuple of (generated_texts, total_new_tokens, generation_seconds).
     ``generated_texts`` is a list of decoded new-token strings, one per
     prompt. ``total_new_tokens`` is the total number of new token
     positions in the output tensor (batch_size * new_token_cols), which
@@ -460,6 +469,8 @@ def _tokenize_and_generate(
     positions are real forward passes. Counting from the tensor shape
     avoids the under-count that a decode->encode round-trip produces
     (EOS is stripped by skip_special_tokens, so re-encoding drops it).
+    ``generation_seconds`` is the wall-clock time spent inside
+    ``model.generate()`` only — excludes tokenization and decode overhead.
     """
     # Tokenize with left-padding to the longest prompt in this batch.
     encoding = tokenizer(
@@ -474,6 +485,9 @@ def _tokenize_and_generate(
 
     prompt_len = input_ids.shape[1]  # number of tokens in the (padded) prompt
 
+    # Time only the generate() call so we can report true generation
+    # throughput (excluding model load, tokenization, and decode overhead).
+    _gen_start = time.monotonic()
     with torch.no_grad():
         output_ids = model.generate(
             input_ids=input_ids,
@@ -482,6 +496,7 @@ def _tokenize_and_generate(
             do_sample=False,    # greedy decoding: deterministic, reproducible
             use_cache=True,     # KV-cache: speeds up autoregressive steps
         )
+    generation_seconds = time.monotonic() - _gen_start
 
     # output_ids shape: (batch, prompt_len + new_tokens).
     # Slice off the prompt tokens to get only the newly generated tokens.
@@ -498,7 +513,7 @@ def _tokenize_and_generate(
         tokenizer.decode(row, skip_special_tokens=True)
         for row in new_token_ids
     ]
-    return generated_texts, total_new_tokens
+    return generated_texts, total_new_tokens, generation_seconds
 
 
 # =============================================================================
@@ -600,6 +615,7 @@ def _write_cost_summary(
     start_time: str,
     end_time: str,
     elapsed_sec: float,
+    generation_seconds: float,
     gpu_type: str,
     dtype: str,
     generated_tokens: int,
@@ -617,7 +633,12 @@ def _write_cost_summary(
     start_time, end_time
         ISO-8601 strings set by RunTracker.
     elapsed_sec
-        Wall-clock seconds for the full evaluation.
+        Wall-clock seconds for the full evaluation (includes model load,
+        data loading, and writing output files). Used for billing estimates.
+    generation_seconds
+        Seconds spent inside ``model.generate()`` across all calls and all
+        sources. Excludes model load time so this reflects true generation
+        throughput.
     gpu_type
         Device name string (e.g. ``"Tesla T4"`` or ``"CPU"``).
     dtype
@@ -625,7 +646,8 @@ def _write_cost_summary(
     generated_tokens
         Total new tokens produced across all sources.
     tokens_per_second
-        Throughput.
+        Throughput computed as ``generated_tokens / generation_seconds``
+        (not divided by ``elapsed_sec`` to avoid penalising model load time).
     estimated_cost_usd
         Dollar cost if ``--gpu-cost-per-hour`` was supplied, else ``None``.
     """
@@ -634,6 +656,7 @@ def _write_cost_summary(
         "start_time": start_time,
         "end_time": end_time,
         "elapsed_sec": elapsed_sec,
+        "generation_seconds": generation_seconds,
         "gpu_type": gpu_type,
         "dtype": dtype,
         "generated_tokens": generated_tokens,
@@ -857,7 +880,7 @@ def _evaluate_one_source(
     examples: list[Any],
     batch_size: int,
     device: str,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int, float]:
     """Run generation + scoring for one (model, source) pair.
 
     Parameters
@@ -875,15 +898,17 @@ def _evaluate_one_source(
 
     Returns
     -------
-    (detail_rows, total_new_tokens)
+    (detail_rows, total_new_tokens, generation_seconds)
         ``detail_rows`` is a list of per-example dicts ready to write to CSV.
         ``total_new_tokens`` is the count of newly generated tokens.
+        ``generation_seconds`` is the total time spent inside
+        ``model.generate()`` for this source.
     """
     prompts = [ex.prompt for ex in examples]
 
     # Generate all continuations for this source in one batched call.
     # _generate_batch handles the chunking, OOM fallback, and token counting.
-    generated_texts, total_new_tokens = _generate_batch(
+    generated_texts, total_new_tokens, generation_seconds = _generate_batch(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -909,7 +934,7 @@ def _evaluate_one_source(
             "is_correct": is_correct,
         })
 
-    return detail_rows, total_new_tokens
+    return detail_rows, total_new_tokens, generation_seconds
 
 
 # =============================================================================
@@ -1020,6 +1045,11 @@ def run_eval(
     run_name = out_dir.name  # use the final directory component as run name
     tracker = RunTracker(out_dir=out_dir, run_name=run_name, gpu_cost_per_hour=gpu_cost_per_hour)
 
+    # Track total time spent inside model.generate() across all sources and
+    # checkpoints so we can report true generation throughput separately from
+    # wall-clock (which includes model load, data loading, and I/O).
+    total_generation_seconds: float = 0.0
+
     with tracker:
         for ckpt_name, ckpt_path in checkpoints.items():
             print(f"\n[eval_exact] Loading checkpoint: {ckpt_name!r} from {ckpt_path!r}")
@@ -1036,7 +1066,7 @@ def run_eval(
                 )
 
                 t0 = time.monotonic()
-                detail_rows, new_tokens = _evaluate_one_source(
+                detail_rows, new_tokens, source_gen_sec = _evaluate_one_source(
                     model=model,
                     tokenizer=tokenizer,
                     source=source,
@@ -1047,6 +1077,7 @@ def run_eval(
                 elapsed = time.monotonic() - t0
 
                 tracker.add_generated_tokens(new_tokens)
+                total_generation_seconds += source_gen_sec
 
                 # Compute aggregate metrics.
                 n_evaluated = len(detail_rows)
@@ -1093,13 +1124,16 @@ def run_eval(
 
     # Write cost_summary.json directly rather than via tracker.write(), so
     # we can supply the correct dtype string (only known after model load).
+    # tokens_per_second is computed from generation time (not wall-clock)
+    # so it reflects true generation throughput, not model load overhead.
     tokens_per_second = (
-        tracker.total_generated_tokens / tracker.elapsed_sec
-        if tracker.elapsed_sec > 0
+        tracker.total_generated_tokens / total_generation_seconds
+        if total_generation_seconds > 0
         else 0.0
     )
     estimated_cost_usd: float | None = None
     if gpu_cost_per_hour is not None:
+        # Dollar cost uses elapsed_sec (wall-clock) for billing accuracy.
         estimated_cost_usd = (tracker.elapsed_sec / 3600.0) * gpu_cost_per_hour
 
     _write_cost_summary(
@@ -1108,6 +1142,7 @@ def run_eval(
         start_time=tracker.start_time,
         end_time=tracker.end_time,
         elapsed_sec=tracker.elapsed_sec,
+        generation_seconds=total_generation_seconds,
         gpu_type=tracker.gpu_type,
         dtype=dtype_str,
         generated_tokens=tracker.total_generated_tokens,
