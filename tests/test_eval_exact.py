@@ -657,12 +657,9 @@ def test_cuda_determinism_flags_set_on_cuda_device(
         calls.append((val, warn_only))
 
     monkeypatch.setattr(torch, "use_deterministic_algorithms", mock_use_deterministic)
-    # Record the cudnn attribute changes via a simple flag.
-    deterministic_values: list[bool] = []
-    benchmark_values: list[bool] = []
 
-    # torch.backends.cudnn is a module-level object; capture attribute sets
-    # by wrapping the assignments in a custom context.
+    # Capture the pre-call cudnn state so we can restore it after the test
+    # (avoids polluting the process state for subsequent tests).
     original_det = torch.backends.cudnn.deterministic
     original_bench = torch.backends.cudnn.benchmark
 
@@ -807,30 +804,57 @@ def test_parse_checkpoint_pair_valid_names_accepted() -> None:
         "qwen-0.5b",
         "sshleifer/tiny-gpt2",
     )
+    # Verify dot is allowed in the name (M4 allowlist: letters/digits/dot/underscore/hyphen).
+    assert _parse_checkpoint_pair("gpt.tiny=sshleifer/tiny-gpt2") == (
+        "gpt.tiny",
+        "sshleifer/tiny-gpt2",
+    )
 
 
 def test_parse_checkpoint_pair_dotdot_rejected() -> None:
-    """A name containing '..' raises ArgumentTypeError (path traversal guard)."""
-    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+    """A name containing '..' raises ArgumentTypeError (path traversal guard).
+
+    '../' is rejected because '/' is not in the allowlist — the regex
+    rejects the entire name at the '/' character.
+    """
+    with pytest.raises(argparse.ArgumentTypeError, match="must match"):
         _parse_checkpoint_pair("../etc=sshleifer/tiny-gpt2")
 
 
 def test_parse_checkpoint_pair_forward_slash_in_name_rejected() -> None:
     """A name containing '/' raises ArgumentTypeError."""
-    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+    with pytest.raises(argparse.ArgumentTypeError, match="must match"):
         _parse_checkpoint_pair("a/b=sshleifer/tiny-gpt2")
 
 
 def test_parse_checkpoint_pair_backslash_in_name_rejected() -> None:
     r"""A name containing '\\' raises ArgumentTypeError."""
-    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+    with pytest.raises(argparse.ArgumentTypeError, match="must match"):
         _parse_checkpoint_pair("a\\b=sshleifer/tiny-gpt2")
 
 
 def test_parse_checkpoint_pair_null_byte_in_name_rejected() -> None:
     """A name containing a null byte raises ArgumentTypeError."""
-    with pytest.raises(argparse.ArgumentTypeError, match="path separators"):
+    with pytest.raises(argparse.ArgumentTypeError, match="must match"):
         _parse_checkpoint_pair("a\x00b=sshleifer/tiny-gpt2")
+
+
+def test_parse_checkpoint_pair_space_in_name_rejected() -> None:
+    """A name containing a space raises ArgumentTypeError."""
+    with pytest.raises(argparse.ArgumentTypeError, match="must match"):
+        _parse_checkpoint_pair("my run=sshleifer/tiny-gpt2")
+
+
+def test_parse_checkpoint_pair_accented_char_in_name_rejected() -> None:
+    """A name containing an accented character raises ArgumentTypeError."""
+    with pytest.raises(argparse.ArgumentTypeError, match="must match"):
+        _parse_checkpoint_pair("café=sshleifer/tiny-gpt2")
+
+
+def test_parse_checkpoint_pair_tab_in_name_rejected() -> None:
+    """A name containing a tab character raises ArgumentTypeError."""
+    with pytest.raises(argparse.ArgumentTypeError, match="must match"):
+        _parse_checkpoint_pair("a\tb=sshleifer/tiny-gpt2")
 
 
 # =============================================================================

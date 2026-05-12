@@ -51,14 +51,14 @@ Design notes for anyone reading this to learn from it
 - Batch OOM fallback: we catch ``torch.cuda.OutOfMemoryError`` specifically
   (not the broader ``RuntimeError``) so we never accidentally absorb
   unrelated bugs.
-- Byte-identical re-runs: the details CSV contains no timestamps or
-  run-specific state. The sample order comes from a seeded shuffle.
-  Greedy decoding is fully deterministic on CPU. On CUDA, byte-identity
-  also requires explicit determinism flags (cuDNN algorithm selection is
-  otherwise non-deterministic). ``_set_cuda_determinism`` sets these flags
-  before any model loading when device starts with ``"cuda"``. Together
-  these guarantee that ``details_*.csv`` is byte-for-byte identical across
-  runs with the same seed on the same device and dtype.
+- Best-effort byte-identical re-runs: the details CSV contains no timestamps
+  or run-specific state. The sample order comes from a seeded shuffle. Greedy
+  decoding is fully deterministic on CPU. On CUDA, byte-identity is best-effort:
+  ``_set_cuda_determinism`` sets cuDNN determinism flags before any model loading
+  when device starts with ``"cuda"``, but ``warn_only=True`` means operations
+  that have no deterministic implementation emit a warning and continue rather
+  than aborting. Full byte-identity across CUDA re-runs is only guaranteed when
+  all ops have deterministic implementations; CPU re-runs are fully deterministic.
 """
 
 from __future__ import annotations
@@ -69,6 +69,7 @@ import datetime
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -104,8 +105,11 @@ def _set_cuda_determinism(device: str) -> None:
 
     cuDNN's algorithm selector picks the fastest kernel per operation, which
     can vary across runs and produce different argmax results on logit ties.
-    These flags force deterministic kernels so ``details_*.csv`` is
-    byte-identical across re-runs with the same seed on the same device.
+    These flags request deterministic kernels so ``details_*.csv`` is
+    best-effort byte-identical across re-runs with the same seed on the same
+    device. Full byte-identity is only guaranteed on CPU; on CUDA,
+    ``warn_only=True`` means operations that have no deterministic
+    implementation emit a warning and continue rather than aborting.
 
     Must be called BEFORE any CUDA tensor allocation so that
     CUBLAS_WORKSPACE_CONFIG takes effect before the CUDA context is
@@ -123,6 +127,18 @@ def _set_cuda_determinism(device: str) -> None:
 
     # CUBLAS_WORKSPACE_CONFIG must be in the environment before CUDA context
     # init. setdefault means we do not override a value the user explicitly set.
+    # The only NVIDIA-approved values for deterministic behaviour are
+    # ":4096:8" and ":16:8". Warn if the env var is already set to something
+    # else so the operator knows determinism may be degraded.
+    _VALID_CUBLAS_CONFIGS = {":4096:8", ":16:8"}
+    existing_config = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+    if existing_config is not None and existing_config not in _VALID_CUBLAS_CONFIGS:
+        print(
+            f"[eval_exact] WARNING: CUBLAS_WORKSPACE_CONFIG={existing_config!r} "
+            f"is not a deterministic value (expected one of {_VALID_CUBLAS_CONFIGS}). "
+            f"CUDA determinism may be degraded.",
+            file=sys.stderr,
+        )
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
     # warn_only=True: some operations have no deterministic implementation.
@@ -1225,6 +1241,15 @@ def run_eval(
 # =============================================================================
 
 
+# Allowlist for checkpoint names: letters, digits, dot, underscore, hyphen only.
+# This is a positive allowlist (tighter than a denylist) that rejects spaces,
+# accented characters, control characters, slashes, and anything else not
+# explicitly permitted. The name flows into the output filename
+# ``details_{name}_{source}.csv``, so only filesystem-safe printable ASCII
+# characters are allowed.
+_SAFE_CHECKPOINT_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
 def _parse_checkpoint_pair(value: str) -> tuple[str, str]:
     """Parse a ``name=path`` pair from the command line.
 
@@ -1243,8 +1268,8 @@ def _parse_checkpoint_pair(value: str) -> tuple[str, str]:
     argparse.ArgumentTypeError
         If the value does not contain exactly one ``=`` separator,
         if the name is empty or the path is empty, or if the name
-        contains path-traversal characters (``/``, ``\\``, ``..``,
-        or null bytes).
+        does not match ``_SAFE_CHECKPOINT_NAME`` (letters, digits,
+        dot, underscore, hyphen only).
 
     Security note: the name flows into the output filename
     ``details_{name}_{source}.csv``.  Without this guard a caller
@@ -1268,10 +1293,11 @@ def _parse_checkpoint_pair(value: str) -> tuple[str, str]:
             f"checkpoint path is empty in {value!r}"
         )
     # Guard: the name is used verbatim in the output filename.  Reject any
-    # name that contains characters that could escape the output directory.
-    if any(c in name for c in ("/", "\\", "..", "\x00")):
+    # name that contains characters outside the safe allowlist.
+    if not _SAFE_CHECKPOINT_NAME.match(name):
         raise argparse.ArgumentTypeError(
-            f"checkpoint name {name!r} must not contain path separators or '..'"
+            f"checkpoint name {name!r} must match {_SAFE_CHECKPOINT_NAME.pattern} "
+            f"(letters, digits, dot, underscore, hyphen only)"
         )
     return name, path
 

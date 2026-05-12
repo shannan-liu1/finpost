@@ -80,6 +80,8 @@ cost_summary.json
 1. The command `python -m finpost.evals.eval_exact --checkpoints base=<path> combined=<path> --sources gsm8k math --n 500 --seed 42 --out-dir results/evals/<run_name>/` runs to completion on a Colab T4 or Kaggle T4 environment and writes all five artifact files listed under Deliverables.
 2. `accuracy_summary.csv` contains exactly four rows: `{base, combined} × {gsm8k, math}`, each with the columns listed in Deliverables.
 3. Re-running the same command with the same `--seed` produces byte-identical `details_*.csv` files. (Greedy decoding, fixed dtype, seeded shuffling.)
+
+   **Amendment 2026-05-12:** Byte-identity on CUDA is best-effort, not guaranteed. `_set_cuda_determinism` sets cuDNN determinism flags and `CUBLAS_WORKSPACE_CONFIG` before any model loading, but `torch.use_deterministic_algorithms(True, warn_only=True)` means operations that have no deterministic CUDA implementation emit a warning and continue rather than aborting. Full byte-identity across re-runs is only guaranteed on CPU. CUDA re-runs with the same seed on the same device are expected to be identical in practice for standard transformer forward+generate paths, but cannot be formally guaranteed if non-deterministic ops are present in the model graph.
 4. Both notebook variants run top-to-bottom without `/kaggle/working/` paths leaking into the Colab notebook or vice versa, and persist their outputs to the platform-appropriate location (Google Drive for Colab, `/kaggle/working/` for Kaggle).
 5. `pytest tests/test_eval_exact.py -v` passes.
 6. The post-evaluation summary (rendered inline in the notebook or printed by the CLI) explicitly identifies exactly one of:
