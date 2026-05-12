@@ -29,6 +29,7 @@ from finpost.data.schema import Example
 # public surface without running the full CLI entrypoint.
 from finpost.evals.eval_exact import (
     RunTracker,
+    _count_non_pad_tokens,
     _generate_batch,
     _generate_chunk_with_oom_fallback,
     _parse_checkpoint_pair,
@@ -642,6 +643,64 @@ def test_run_tracker_records_elapsed_and_tokens(tmp_path: Path) -> None:
     assert tracker.total_generated_tokens == 150
 
 
+
+
+# =============================================================================
+# 6b. Non-pad token counting (MEDIUM 7)
+# =============================================================================
+#
+# _count_non_pad_tokens is the helper that turns a (batch, new_tokens) tensor
+# into the "decoded" (content-length) count. The whole point of the MEDIUM 7
+# fix is that this number diverges from new_token_ids.numel() when one
+# sequence in a batch hits EOS before others, so HuggingFace's generate()
+# fills the trailing positions with pad_token_id. tiny-gpt2 with the budgets
+# we use in slow tests does not hit EOS, so an end-to-end test never
+# exercises the divergence and a silently-broken implementation that just
+# returns numel() would still pass. These tests use a synthetic tensor so
+# the divergent path IS exercised.
+
+
+def test_count_non_pad_tokens_excludes_pad_fill() -> None:
+    """A batch with one early-stop and one full-length sequence: count excludes pad fill."""
+    pad_id = 0
+    # Row 0: 3 real tokens, then EOS-style pad fill in the last 2 slots.
+    # Row 1: 5 real tokens, no pad fill.
+    new_token_ids = torch.tensor(
+        [
+            [1, 2, 3, pad_id, pad_id],
+            [4, 5, 6, 7, 8],
+        ]
+    )
+    # Rectangular count is 10 (2 rows × 5 cols); non-pad is 3 + 5 = 8.
+    assert new_token_ids.numel() == 10
+    assert _count_non_pad_tokens(new_token_ids, pad_id) == 8
+
+
+def test_count_non_pad_tokens_no_pad_in_batch() -> None:
+    """When no pad fill exists, non-pad count equals rectangular count."""
+    pad_id = 0
+    new_token_ids = torch.tensor([[1, 2, 3], [4, 5, 6]])
+    assert _count_non_pad_tokens(new_token_ids, pad_id) == 6
+
+
+def test_count_non_pad_tokens_all_pad() -> None:
+    """An entirely-pad tensor (degenerate case) returns 0."""
+    pad_id = 0
+    new_token_ids = torch.tensor([[pad_id, pad_id], [pad_id, pad_id]])
+    assert _count_non_pad_tokens(new_token_ids, pad_id) == 0
+
+
+def test_count_non_pad_tokens_pad_id_none_falls_back_to_numel() -> None:
+    """When the tokenizer has no pad_token_id, fall back to the rectangular count."""
+    new_token_ids = torch.tensor([[1, 2, 3], [4, 5, 6]])
+    assert _count_non_pad_tokens(new_token_ids, None) == 6
+
+
+def test_count_non_pad_tokens_returns_python_int() -> None:
+    """Return type must be int (not torch.Tensor) so it sums cleanly across batches."""
+    new_token_ids = torch.tensor([[1, 0], [1, 0]])
+    result = _count_non_pad_tokens(new_token_ids, 0)
+    assert type(result) is int
 
 
 # =============================================================================

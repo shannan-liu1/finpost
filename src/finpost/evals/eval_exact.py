@@ -266,6 +266,31 @@ def _sample_examples(
 
 
 # =============================================================================
+# Token-counting helper (MEDIUM 7)
+# =============================================================================
+
+
+def _count_non_pad_tokens(new_token_ids: torch.Tensor, pad_id: int | None) -> int:
+    """Count positions in a (batch, new_tokens) tensor whose id is not pad.
+
+    Used to report ``generated_tokens_decoded`` (content length)
+    separately from the rectangular position count
+    ``new_token_ids.numel()`` (compute). When ``pad_id`` is None there
+    is no pad concept, so all positions count as non-pad.
+
+    Returns ``int`` (not a 0-d tensor) so callers can sum across batches
+    without per-batch device→host round-trips dominating the time on GPU.
+
+    Factored out so the divergence between rectangular and content
+    counts can be unit-tested with a synthetic tensor, instead of
+    relying on a model run that happens to hit EOS at the right step.
+    """
+    if pad_id is None:
+        return int(new_token_ids.numel())
+    return int((new_token_ids != pad_id).sum().item())
+
+
+# =============================================================================
 # Batched generation with OOM fallback
 # =============================================================================
 
@@ -544,13 +569,11 @@ def _tokenize_and_generate(
     # MEDIUM 7 fix. Sequences that hit EOS early have their trailing
     # positions filled with pad_token_id by HuggingFace's generate(),
     # which the rectangular count above includes but a content-length
-    # measure should not. When pad_token_id is None there is no pad
-    # concept, so the rectangular count is the only available count.
-    pad_id = tokenizer.pad_token_id
-    if pad_id is None:
-        non_pad_tokens = total_new_tokens
-    else:
-        non_pad_tokens = int((new_token_ids != pad_id).sum().item())
+    # measure should not. Delegated to ``_count_non_pad_tokens`` so the
+    # counting logic can be unit-tested directly with a synthetic
+    # tensor that contains pad fill, without depending on a real model
+    # happening to hit EOS within the budget.
+    non_pad_tokens = _count_non_pad_tokens(new_token_ids, tokenizer.pad_token_id)
 
     # Decode each row separately. skip_special_tokens=True strips pad/eos.
     generated_texts = [
