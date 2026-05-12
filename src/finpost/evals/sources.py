@@ -9,11 +9,39 @@ extract final answers, and scoring against gold standard answers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Callable
 
 from finpost.data.gsm8k import load_gsm8k
 from finpost.data.math_dataset import load_math
 from finpost.data.schema import Example
+
+# =============================================================================
+# Decimal-based numeric equality helper
+# =============================================================================
+
+
+def _decimal_equal(predicted: str, gold: str) -> bool:
+    """Return True iff both strings parse as finite Decimals that compare equal.
+
+    Handles "42.0" == "42", "4.2e3" == "4200", and similar non-string-equal
+    numeric cases. Rejects nan, inf, -inf, and non-numeric strings (the
+    caller's string-equality check has already failed by the time we get here).
+
+    Decimal is used instead of float to avoid precision artifacts and to
+    explicitly reject non-finite values (float("nan") == float("nan") is
+    False, but float("inf") == float("inf") is True — surprising in a
+    scoring context where inf is not a valid numeric answer).
+    """
+    try:
+        a = Decimal(predicted)
+        b = Decimal(gold)
+    except (InvalidOperation, ValueError, TypeError):
+        return False
+    if not (a.is_finite() and b.is_finite()):
+        return False
+    return a == b
+
 
 # =============================================================================
 # Module-level counter for _strip_string normalization failures (RB1).
@@ -285,10 +313,8 @@ def score_gsm8k(predicted: str | None, gold: str) -> bool:
     if predicted == gold:
         return True
     # Numeric fallback: handles "42.0" vs "42", "4.2e3" vs "4200", etc.
-    try:
-        return float(predicted) == float(gold)
-    except (ValueError, TypeError):
-        return False
+    # _decimal_equal rejects nan/inf and non-numeric strings explicitly.
+    return _decimal_equal(predicted, gold)
 
 
 # =============================================================================
@@ -419,12 +445,9 @@ def score_math(predicted: str | None, gold: str) -> bool:
         # rather than the proper normalization path.
         _strip_string_failure_count += 1
     # Numeric fallback: handles "42.0" vs "42", "4.2e3" vs "4200", etc.
-    # LaTeX strings (e.g., \frac{1}{2}) won't parse as float and fall
-    # through to False, which is correct.
-    try:
-        return float(predicted) == float(gold)
-    except (ValueError, TypeError):
-        return False
+    # LaTeX strings (e.g., \frac{1}{2}) will fail Decimal parsing and fall
+    # through to False, which is correct. _decimal_equal also rejects nan/inf.
+    return _decimal_equal(predicted, gold)
 
 
 # =============================================================================

@@ -10,8 +10,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from finpost.evals.sources import REGISTRY
-
+from finpost.evals.sources import REGISTRY, _decimal_equal
 
 # =============================================================================
 # REGISTRY lookup and basic contract
@@ -351,3 +350,69 @@ def test_math_default_max_new_tokens() -> None:
     """MATH has a default generation budget of 768 tokens."""
     math = REGISTRY["math"]
     assert math.default_max_new_tokens == 768
+
+
+# =============================================================================
+# M3: _decimal_equal unit tests
+# =============================================================================
+
+
+def test_decimal_equal_integer_forms() -> None:
+    """'42.0' and '42' compare equal under Decimal."""
+    assert _decimal_equal("42.0", "42") is True
+
+
+def test_decimal_equal_trailing_zero() -> None:
+    """'0.1' and '0.10' compare equal under Decimal."""
+    assert _decimal_equal("0.1", "0.10") is True
+
+
+def test_decimal_equal_nan_rejected() -> None:
+    """'nan' must not compare equal to itself — it is not a valid answer."""
+    assert _decimal_equal("nan", "nan") is False
+
+
+def test_decimal_equal_inf_rejected() -> None:
+    """'inf' must be rejected as non-finite."""
+    assert _decimal_equal("inf", "inf") is False
+
+
+def test_decimal_equal_non_numeric_string_rejected() -> None:
+    """Non-numeric strings must return False, not raise."""
+    assert _decimal_equal("forty", "40") is False
+
+
+def test_decimal_equal_empty_string_rejected() -> None:
+    """An empty predicted string must return False, not raise."""
+    assert _decimal_equal("", "42") is False
+
+
+# Verify the Decimal path is exercised in the scoring functions below.
+
+
+def test_gsm8k_score_uses_decimal_path() -> None:
+    """score_gsm8k uses _decimal_equal: '42.0' vs '42' scores True."""
+    assert REGISTRY["gsm8k"].score("42.0", "42") is True
+
+
+def test_gsm8k_score_rejects_nan_via_decimal() -> None:
+    """score_gsm8k rejects nan when predicted differs from gold as string.
+
+    "NaN" (uppercase) != "nan" (gold) as strings, so exact match fails
+    and the fallback reaches _decimal_equal, which rejects nan as non-finite.
+    """
+    assert REGISTRY["gsm8k"].score("NaN", "nan") is False
+
+
+def test_math_score_uses_decimal_path() -> None:
+    """score_math uses _decimal_equal: '42.0' vs '42' scores True."""
+    assert REGISTRY["math"].score("42.0", "42") is True
+
+
+def test_math_score_rejects_nan_via_decimal() -> None:
+    """score_math rejects nan when predicted differs from gold as string.
+
+    "NaN" (uppercase) != "nan" (gold) as strings, so exact match fails
+    and the fallback reaches _decimal_equal, which rejects nan as non-finite.
+    """
+    assert REGISTRY["math"].score("NaN", "nan") is False
