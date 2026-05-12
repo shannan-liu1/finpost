@@ -651,12 +651,13 @@ def _write_run_metadata(
     seed: int,
     eval_n: int,
     generation_settings: dict[str, Any],
+    checkpoints: dict[str, str],
 ) -> None:
     """Write run_metadata.json.
 
     Contains everything needed to reproduce the run: library versions,
-    hardware, eval configuration, and the git SHA so you can trace back
-    to the exact code state.
+    hardware, eval configuration, checkpoint paths, and the git SHA so
+    you can trace back to the exact code state.
 
     Parameters
     ----------
@@ -673,19 +674,34 @@ def _write_run_metadata(
     generation_settings
         Dict mapping source name to generation kwargs (max_new_tokens,
         batch_size).
+    checkpoints
+        Dict mapping user-supplied checkpoint names to their paths or
+        Hub IDs (e.g. ``{"base": "Qwen/Qwen2.5-0.5B"}``).
     """
     import transformers
 
     # CUDA version: only meaningful when CUDA is available.
     cuda_version = torch.version.cuda if torch.cuda.is_available() else "N/A"
 
-    # Git short SHA: wrap in try/except so a detached HEAD or missing git
-    # binary does not abort the evaluation.
+    # Friendly device name: match the convention used in cost_summary.json
+    # (RunTracker.gpu_type). On CUDA, report the human-readable GPU name
+    # (e.g. "NVIDIA A40"). On CPU, report "CPU" (capitalised, matching
+    # RunTracker's default).
+    if device.startswith("cuda") and torch.cuda.is_available():
+        device_name = torch.cuda.get_device_name(0)
+    else:
+        device_name = "CPU"
+
+    # Git short SHA: pass cwd= so the git call succeeds regardless of
+    # where the user invokes the CLI from (e.g. cd ~ && python -m ...).
+    # Path(__file__).resolve().parent gives the directory containing this
+    # file, which is always inside the repo; git walks upward to find .git.
     try:
         git_sha = (
             subprocess.check_output(
                 ["git", "rev-parse", "--short", "HEAD"],
                 stderr=subprocess.DEVNULL,
+                cwd=Path(__file__).resolve().parent,
             )
             .decode()
             .strip()
@@ -694,7 +710,7 @@ def _write_run_metadata(
         git_sha = "unknown"
 
     data = {
-        "device": device,
+        "device": device_name,
         "dtype": dtype,
         "torch_version": torch.__version__,
         "transformers_version": transformers.__version__,
@@ -703,6 +719,7 @@ def _write_run_metadata(
         "eval_n": eval_n,
         "git_sha": git_sha,
         "generation_settings": generation_settings,
+        "checkpoints": checkpoints,
     }
     with (out_dir / "run_metadata.json").open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
@@ -1105,6 +1122,7 @@ def run_eval(
         seed=seed,
         eval_n=n,
         generation_settings=generation_settings,
+        checkpoints=checkpoints,
     )
 
     print(f"\n[eval_exact] Done. Results written to: {out_dir}")

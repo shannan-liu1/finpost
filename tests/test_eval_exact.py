@@ -323,6 +323,7 @@ _EXPECTED_METADATA_FIELDS = {
     "eval_n",
     "git_sha",
     "generation_settings",
+    "checkpoints",
 }
 
 
@@ -508,6 +509,7 @@ def test_run_metadata_has_required_fields(tmp_path: Path) -> None:
     generation_settings = {
         "gsm8k": {"max_new_tokens": 256, "batch_size": 8},
     }
+    checkpoints = {"base": "Qwen/Qwen2.5-0.5B"}
     _write_run_metadata(
         out_dir=tmp_path,
         device="cpu",
@@ -515,6 +517,7 @@ def test_run_metadata_has_required_fields(tmp_path: Path) -> None:
         seed=42,
         eval_n=4,
         generation_settings=generation_settings,
+        checkpoints=checkpoints,
     )
 
     json_path = tmp_path / "run_metadata.json"
@@ -525,11 +528,18 @@ def test_run_metadata_has_required_fields(tmp_path: Path) -> None:
     for field in _EXPECTED_METADATA_FIELDS:
         assert field in data, f"Missing field: {field!r}"
 
-    assert data["device"] == "cpu"
+    # device must be a friendly name: "CPU" (not "cpu") when on CPU.
+    assert data["device"] == "CPU", (
+        f"Expected friendly device name 'CPU', got {data['device']!r}"
+    )
     assert data["dtype"] == "float32"
     assert data["seed"] == 42
     assert data["eval_n"] == 4
     assert "gsm8k" in data["generation_settings"]
+    # checkpoints field must round-trip the supplied dict.
+    assert data["checkpoints"] == {"base": "Qwen/Qwen2.5-0.5B"}, (
+        f"checkpoints field mismatch: {data['checkpoints']!r}"
+    )
 
 
 # =============================================================================
