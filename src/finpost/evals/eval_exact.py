@@ -363,6 +363,13 @@ def _generate_chunk_with_oom_fallback(
     torch.cuda.OutOfMemoryError
         If batch_size is already 1 and generation still OOMs.
     """
+    # Guard: an empty prompt list can arrive as the right half of a
+    # 1-prompt chunk split (prompts[:1] = [prompt], prompts[1:] = []).
+    # Without this check _tokenize_and_generate would crash, and the zip
+    # in _evaluate_one_source would produce a length-mismatch error.
+    if not prompts:
+        return [], 0, batch_size
+
     try:
         texts, token_count = _tokenize_and_generate(
             model=model,

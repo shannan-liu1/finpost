@@ -29,6 +29,7 @@ from finpost.data.schema import Example
 from finpost.evals.eval_exact import (
     RunTracker,
     _generate_batch,
+    _generate_chunk_with_oom_fallback,
     _sample_examples,
     _set_cuda_determinism,
     _write_accuracy_summary,
@@ -728,3 +729,72 @@ def test_cuda_determinism_flags_not_set_on_cpu(
     assert calls == [], (
         "torch.use_deterministic_algorithms should NOT be called for device='cpu'"
     )
+
+
+# =============================================================================
+# 8. OOM fallback empty-list guard (Bug 6)
+# =============================================================================
+#
+# _generate_chunk_with_oom_fallback must return ([], 0, batch_size) immediately
+# when prompts is empty. Without this guard, the recursive split on a
+# 1-prompt chunk that OOMs produces an empty right half and passes it back
+# through _tokenize_and_generate, eventually crashing.
+
+
+@pytest.mark.slow
+def test_generate_chunk_empty_prompts_returns_empty() -> None:
+    """_generate_chunk_with_oom_fallback([]) returns ([], 0, batch_size) immediately."""
+    model, tokenizer = _make_tiny_model_and_tokenizer()
+
+    result = _generate_chunk_with_oom_fallback(
+        model=model,
+        tokenizer=tokenizer,
+        prompts=[],
+        batch_size=4,
+        max_new_tokens=8,
+        device="cpu",
+    )
+
+    # Must return ([], 0, 4) — texts empty, zero tokens, batch_size unchanged.
+    assert result == ([], 0, 4), (
+        f"Expected ([], 0, 4) for empty prompts, got {result!r}"
+    )
+
+
+@pytest.mark.slow
+def test_generate_chunk_oom_on_single_prompt_at_batch_size_gt_1_recovers() -> None:
+    """OOM on a 1-prompt chunk at batch_size=2 recovers via the OOM fallback.
+
+    This is the exact bug path: batch_size=2, 1 prompt, OOM fires.
+    The split produces prompts[:1] = [prompt] and prompts[1:] = [].
+    Without the empty-list guard the empty right half crashes; with it
+    the function returns the single generated text cleanly.
+    """
+    model, tokenizer = _make_tiny_model_and_tokenizer()
+
+    call_count = 0
+    original_generate = model.generate
+
+    def oom_once(*args: Any, **kwargs: Any):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
+        return original_generate(*args, **kwargs)
+
+    model.generate = oom_once  # type: ignore[method-assign]
+
+    texts, token_count, effective_bs = _generate_chunk_with_oom_fallback(
+        model=model,
+        tokenizer=tokenizer,
+        prompts=["What is 1 + 1?"],
+        batch_size=2,
+        max_new_tokens=8,
+        device="cpu",
+    )
+
+    # Must return exactly one text and a positive token count.
+    assert len(texts) == 1, f"Expected 1 text, got {len(texts)}"
+    assert token_count > 0, "token_count should be > 0 after successful generation"
+    # effective_bs should be 1 (the halved size that actually succeeded).
+    assert effective_bs == 1, f"Expected effective_bs=1, got {effective_bs}"
