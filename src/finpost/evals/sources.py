@@ -16,6 +16,137 @@ from finpost.data.math_dataset import load_math
 from finpost.data.schema import Example
 
 
+# =============================================================================
+# Vendored Hendrycks MATH LaTeX normalization helpers
+#
+# Adapted from Hendrycks et al. (2021) MATH dataset evaluation:
+# https://github.com/hendrycks/math/blob/main/modeling/math_equivalence.py
+# Vendored here under MIT license. The original function handles LaTeX
+# normalization required for fair string comparison: \dfrac/\tfrac/\frac,
+# \left(\right), spacing macros, and trailing-zero handling.
+#
+# All four helpers (_fix_fracs, _fix_a_slash_b, _fix_sqrt,
+# _remove_right_units) are required by _strip_string; vendored verbatim.
+# =============================================================================
+
+
+def _fix_fracs(string: str) -> str:
+    substrs = string.split("\\frac")
+    new_str = substrs[0]
+    if len(substrs) > 1:
+        substrs = substrs[1:]
+        for substr in substrs:
+            new_str += "\\frac"
+            if substr[0] == "{":
+                new_str += substr
+            else:
+                try:
+                    assert len(substr) >= 2
+                except Exception:
+                    return string
+                a = substr[0]
+                b = substr[1]
+                if b != "{":
+                    if len(substr) > 2:
+                        post_substr = substr[2:]
+                        new_str += "{" + a + "}{" + b + "}" + post_substr
+                    else:
+                        new_str += "{" + a + "}{" + b + "}"
+                else:
+                    if len(substr) > 2:
+                        post_substr = substr[2:]
+                        new_str += "{" + a + "}" + b + post_substr
+                    else:
+                        new_str += "{" + a + "}" + b
+    string = new_str
+    return string
+
+
+def _fix_a_slash_b(string: str) -> str:
+    if len(string.split("/")) != 2:
+        return string
+    a = string.split("/")[0]
+    b = string.split("/")[1]
+    try:
+        a = int(a)
+        b = int(b)
+        assert string == "{}/{}".format(a, b)
+        new_string = "\\frac{" + str(a) + "}{" + str(b) + "}"
+        return new_string
+    except Exception:
+        return string
+
+
+def _remove_right_units(string: str) -> str:
+    if "\\text{ " in string:
+        splits = string.split("\\text{ ")
+        assert len(splits) == 2
+        return splits[0]
+    else:
+        return string
+
+
+def _fix_sqrt(string: str) -> str:
+    if "\\sqrt" not in string:
+        return string
+    splits = string.split("\\sqrt")
+    new_string = splits[0]
+    for split in splits[1:]:
+        if split[0] != "{":
+            a = split[0]
+            new_substr = "\\sqrt{" + a + "}" + split[1:]
+        else:
+            new_substr = "\\sqrt" + split
+        new_string += new_substr
+    return new_string
+
+
+def _strip_string(string: str) -> str:
+    """Normalize a LaTeX math string for comparison.
+
+    Applies the canonical Hendrycks MATH grader normalizations:
+    removes newlines and spacing macros, normalizes fraction variants
+    (\\dfrac, \\tfrac) to \\frac, strips \\left/\\right size hints,
+    degree symbols, currency markers, and trailing-zero handling on
+    decimals. Called on both predicted and gold before comparison in
+    ``score_math``.
+    """
+    string = string.replace("\n", "")
+    string = string.replace("\\!", "")
+    string = string.replace("\\\\", "\\")
+    string = string.replace("tfrac", "frac")
+    string = string.replace("dfrac", "frac")
+    string = string.replace("\\left", "")
+    string = string.replace("\\right", "")
+    string = string.replace("^{\\circ}", "")
+    string = string.replace("^\\circ", "")
+    string = string.replace("\\$", "")
+    string = _remove_right_units(string)
+    string = string.replace("\\%", "")
+    string = string.replace("\\%", "")
+    string = string.replace(" .", " 0.")
+    string = string.replace("{.", "{0.")
+    if len(string) == 0:
+        return string
+    if string[0] == ".":
+        string = "0" + string
+    if len(string.split("=")) == 2:
+        if len(string.split("=")[0]) <= 2:
+            string = string.split("=")[1]
+    string = _fix_sqrt(string)
+    string = string.replace(" ", "")
+    string = _fix_fracs(string)
+    if string == "0.5":
+        string = "\\frac{1}{2}"
+    string = _fix_a_slash_b(string)
+    return string
+
+
+# =============================================================================
+# End of vendored Hendrycks normalization code.
+# =============================================================================
+
+
 @dataclass(frozen=True)
 class EvalSource:
     """Contract for a Phase 1 evaluation source.
@@ -226,13 +357,20 @@ def extract_math_answer(generation: str) -> str | None:
 
 
 def score_math(predicted: str | None, gold: str) -> bool:
-    """Score a MATH answer via exact string match, with a numeric fallback.
+    """Score a MATH answer using Hendrycks LaTeX normalization and numeric fallback.
 
-    After exact string comparison, a float-equality fallback handles
-    purely numeric MATH answers where the model or gold uses a different
-    decimal representation (e.g., ``"42.0"`` vs ``"42"``). LaTeX
-    fractions and other non-numeric strings will fail float parsing and
-    fall through to ``False`` without any change to existing behavior.
+    Applies three layers in order:
+
+    1. Exact string match (fast path, no normalization cost).
+    2. Hendrycks ``_strip_string`` normalization on both sides — handles
+       ``\\dfrac``/``\\tfrac`` → ``\\frac``, ``\\left``/``\\right``
+       removal, spacing macros, and other canonical LaTeX transforms.
+       Wrapped in ``try/except`` because ``_strip_string`` can raise on
+       pathological input (e.g., unbalanced LaTeX).
+    3. Float-equality fallback — handles purely numeric answers where
+       representation differs (e.g., ``"42.0"`` vs ``"42"``). LaTeX
+       strings will fail ``float()`` parsing and fall through to
+       ``False``.
 
     Parameters
     ----------
@@ -244,13 +382,19 @@ def score_math(predicted: str | None, gold: str) -> bool:
 
     Returns
     -------
-    ``True`` if predicted and gold match exactly or numerically,
+    ``True`` if predicted and gold match under any of the three layers,
     ``False`` otherwise. Predicted ``None`` is always ``False``.
     """
     if predicted is None:
         return False
     if predicted == gold:
         return True
+    # Hendrycks LaTeX normalization layer.
+    try:
+        if _strip_string(predicted) == _strip_string(gold):
+            return True
+    except Exception:
+        pass
     # Numeric fallback: handles "42.0" vs "42", "4.2e3" vs "4200", etc.
     # LaTeX strings (e.g., \frac{1}{2}) won't parse as float and fall
     # through to False, which is correct.

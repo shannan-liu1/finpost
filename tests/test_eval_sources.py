@@ -235,6 +235,36 @@ def test_math_score_none_is_always_wrong() -> None:
 
 
 # =============================================================================
+# MATH LaTeX normalization via _strip_string (Bug 1)
+# =============================================================================
+
+
+def test_math_score_dfrac_equals_frac() -> None:
+    r"""'\dfrac{1}{2}' and '\frac{1}{2}' should score True after normalization."""
+    assert REGISTRY["math"].score("\\frac{1}{2}", "\\dfrac{1}{2}") is True
+
+
+def test_math_score_tfrac_equals_frac() -> None:
+    r"""'\tfrac{1}{2}' and '\frac{1}{2}' should score True after normalization."""
+    assert REGISTRY["math"].score("\\frac{1}{2}", "\\tfrac{1}{2}") is True
+
+
+def test_math_score_left_right_removed() -> None:
+    r"""'\left(1, 2\right)' and '(1, 2)' should score True — size hints stripped."""
+    assert REGISTRY["math"].score("(1, 2)", "\\left(1, 2\\right)") is True
+
+
+def test_math_score_numeric_via_float_fallback() -> None:
+    """'42' vs '42.0' scores True via numeric fallback (not _strip_string)."""
+    assert REGISTRY["math"].score("42", "42.0") is True
+
+
+def test_math_score_different_fractions_still_false() -> None:
+    r"""'\frac{1}{2}' vs '\frac{2}{4}': _strip_string won't reduce these — False."""
+    assert REGISTRY["math"].score("\\frac{1}{2}", "\\frac{2}{4}") is False
+
+
+# =============================================================================
 # Unicode minus sign normalization (Bug 4)
 # =============================================================================
 
