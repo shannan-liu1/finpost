@@ -1,4 +1,4 @@
-# results/
+ # results/
 
 Training checkpoints and evaluation outputs live here. The contents of this directory are gitignored — only this README is tracked.
 
