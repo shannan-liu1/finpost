@@ -55,6 +55,9 @@ def compute_masked_ce_loss(
     # independent classification problem over the vocabulary.
     flat_logits = shift_logits.view(-1, shift_logits.size(-1))
     flat_labels = shift_labels.view(-1)
+    valid_labels = flat_labels != IGNORE_INDEX
+    if not valid_labels.any():
+        return flat_logits.float().sum() * 0.0
 
     # Upcast logits to fp32 before cross_entropy. With a bf16 model
     # (e.g. Qwen2.5-0.5B in bf16), `flat_logits` is bf16 and the softmax
