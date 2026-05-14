@@ -124,7 +124,7 @@ def test_collator_isolates_attention_between_documents() -> None:
     """A 4D mask blocks attention across packed document boundaries AND across the causal direction."""
     from finpost.training.dataset import PackingCollator, TokenizedSFTExample
 
-    collator = PackingCollator(max_seq_len=8, eos_token_id=99, isolate_documents=True)
+    collator = PackingCollator(max_seq_len=6, eos_token_id=99, isolate_documents=True)
     batch = collator(
         [
             TokenizedSFTExample(torch.tensor([1, 2, 3]), prompt_length=1, source="gsm8k"),
@@ -155,3 +155,31 @@ def test_collator_isolates_attention_between_documents() -> None:
     # Same-document causal works in doc B too.
     assert mask[0, 0, 5, 4].item() == 1
     assert mask[0, 0, 5, 5].item() == 1
+
+
+def test_collator_isolated_attention_mask_has_no_empty_query_rows() -> None:
+    """Ignored separator and padding queries still need one valid attention target."""
+    from finpost.training.dataset import PackingCollator, TokenizedSFTExample
+
+    collator = PackingCollator(max_seq_len=6, eos_token_id=99, isolate_documents=True)
+    batch = collator(
+        [
+            TokenizedSFTExample(torch.tensor([1, 2, 3]), prompt_length=1, source="gsm8k"),
+            TokenizedSFTExample(torch.tensor([4, 5]), prompt_length=1, source="math"),
+            TokenizedSFTExample(torch.tensor([6]), prompt_length=0, source="gsm8k"),
+        ]
+    )
+
+    mask = batch["attention_mask"]
+    assert mask.shape == (2, 1, 6, 6)
+    assert (mask.sum(dim=-1) > 0).all()
+
+    # Row 0 contains a separator at position 3; row 1 contains padding
+    # after position 0. Those ignored queries get a self-only fallback so
+    # older CUDA SDPA kernels do not see an all-blocked row.
+    assert mask[0, 0, 3].tolist() == [0, 0, 0, 1, 0, 0]
+    assert mask[1, 0, 1].tolist() == [0, 1, 0, 0, 0, 0]
+
+    # Real training tokens remain document-isolated.
+    assert mask[0, 0, 4, 1].item() == 0
+    assert mask[0, 0, 5, 4].item() == 1

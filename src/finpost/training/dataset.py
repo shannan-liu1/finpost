@@ -295,6 +295,12 @@ class PackingCollator:
             same_document = (doc_tensor.unsqueeze(0) == doc_tensor.unsqueeze(1)).long()
             real_document = (doc_tensor.unsqueeze(0) >= 0).long()
             mask = same_document * real_document * causal
+            # Separator/padding queries are ignored by the loss, but
+            # older CUDA SDPA kernels can return NaNs for all-blocked rows.
+            empty_queries = mask.sum(dim=-1) == 0
+            if empty_queries.any():
+                indices = torch.arange(width)
+                mask[empty_queries, indices[empty_queries]] = 1
             masks.append(mask)
         return torch.stack(masks, dim=0).unsqueeze(1)
 

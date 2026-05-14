@@ -76,3 +76,18 @@ def test_loss_finite_with_fp32_logits_unchanged() -> None:
 
     assert torch.isfinite(loss)
     assert loss.dtype == torch.float32
+
+
+def test_loss_is_zero_when_all_shifted_labels_are_ignored() -> None:
+    """Validation/truncated batches with no target tokens must not produce NaN."""
+    batch, seq_len, vocab = 2, 8, 100
+    logits = torch.randn(batch, seq_len, vocab, requires_grad=True)
+    labels = torch.full((batch, seq_len), IGNORE_INDEX)
+
+    loss = compute_masked_ce_loss(logits, labels)
+
+    assert loss.item() == 0.0
+    assert loss.dtype == torch.float32
+    loss.backward()
+    assert logits.grad is not None
+    assert torch.equal(logits.grad, torch.zeros_like(logits))
