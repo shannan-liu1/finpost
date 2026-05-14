@@ -56,8 +56,15 @@ def compute_masked_ce_loss(
     flat_logits = shift_logits.view(-1, shift_logits.size(-1))
     flat_labels = shift_labels.view(-1)
 
+    # Upcast logits to fp32 before cross_entropy. With a bf16 model
+    # (e.g. Qwen2.5-0.5B in bf16), `flat_logits` is bf16 and the softmax
+    # over a 150k+ token vocabulary underflows on the small tail
+    # probabilities -> log(0) = -inf -> loss = NaN. The fp32 upcast costs
+    # negligible memory/throughput (loss is a single scalar) and is the
+    # standard guard used by HuggingFace, TRL, llama-recipes, axolotl.
+    # See tests/test_loss_dtype.py for the regression test.
     return F.cross_entropy(
-        flat_logits,
+        flat_logits.float(),
         flat_labels,
         ignore_index=IGNORE_INDEX,
         reduction="mean",
