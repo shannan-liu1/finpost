@@ -20,6 +20,11 @@ Solo project — only `ready-for-agent` is tracked, recorded as a line on each i
 
 Single-context. `CONTEXT.md` at the root; `docs/adr/` created lazily by `/grill-with-docs` when an ADR-worthy decision lands. See [`docs/agents/domain.md`](./docs/agents/domain.md).
 
+## Operational runbooks
+
+- [`docs/runbooks/phase1-training-runbook.md`](./docs/runbooks/phase1-training-runbook.md) — Phase 1 gate-by-gate procedure (local bootstrap → TinyGPT canary → Qwen SFT → DPO).
+- [`docs/runbooks/runpod-bootstrap.md`](./docs/runbooks/runpod-bootstrap.md) — first-time setup on a fresh RunPod pod. Covers the working-tree restore, the editable-install PEP 660 hook failure (write `.pth` by hand if `pip show finpost` succeeds but `import finpost` fails), and the torch / CUDA driver mismatch (pyproject pins `torch>=2.5` → pip pulls CUDA 13 wheel → RunPod A40 driver is CUDA 12.x → downgrade to `torch==2.4.1+cu124`). Read before sending the user through pod setup or debugging pod-side import errors.
+
 ## Known accepted behaviors
 
 Behaviors that are reviewer-flagged or non-obvious but have been explicitly accepted by the owner. Do not re-litigate or "fix" without an explicit new instruction.
