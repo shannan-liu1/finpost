@@ -1,6 +1,6 @@
 # 05 - Create RunPod DPO operator guide and notebook
 
-- **Status:** Not Started
+- **Status:** In Progress
 - **Ready for agent:** yes
 - **Depends on:** 01-build-preference-pairs, 03-dpo-trainer-soft-launch
 
@@ -36,3 +36,9 @@ GPU requirements, cost expectations, and stop/go gates.
 
 The static HTML guide can exist immediately. The executable notebook needs the
 DPO CLI and pair builder from issues 01 and 03.
+
+## Progress notes
+
+- 2026-05-18: Added a draft RunPod operator notebook at
+  `notebooks/dpo_phase1_runpod.ipynb`. It is intentionally fail-fast until the
+  DPO pair builder and trainer entry points exist.
