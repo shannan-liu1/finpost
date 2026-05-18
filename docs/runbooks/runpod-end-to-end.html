@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>finpost RunPod end-to-end runbook</title>
+<style>
+/* Force a single high-contrast light theme regardless of OS dark mode.
+   Previous version honoured prefers-color-scheme, which produced
+   unreadable text on dark-mode browsers. Simpler and predictable: pin
+   light. */
+:root {
+    color-scheme: light only;
+}
+html, body {
+    background: #ffffff !important;
+    color: #0a0a0a !important;
+}
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    max-width: 880px;
+    margin: 2.5rem auto;
+    padding: 0 1.5rem 4rem;
+    line-height: 1.6;
+}
+h1, h2, h3, h4 {
+    line-height: 1.25;
+    margin-top: 2.2rem;
+    margin-bottom: 0.8rem;
+    color: #000000 !important;
+}
+h1 { font-size: 2rem; border-bottom: 1px solid #d0d7de; padding-bottom: 0.3rem; }
+h2 { font-size: 1.5rem; border-bottom: 1px solid #d0d7de; padding-bottom: 0.3rem; }
+h3 { font-size: 1.2rem; }
+h4 { font-size: 1rem; }
+p { margin: 0.6rem 0; color: #0a0a0a !important; }
+a { color: #0550ae !important; text-decoration: underline; }
+a:hover { text-decoration: underline; }
+code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.92em;
+    background: #f0f1f3 !important;
+    padding: 0.15em 0.35em;
+    border-radius: 4px;
+    color: #8a1c1c !important;
+}
+pre {
+    background: #f6f8fa !important;
+    padding: 0.9rem 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    border: 1px solid #d0d7de;
+    line-height: 1.45;
+    color: #0a0a0a !important;
+}
+pre code {
+    background: transparent !important;
+    padding: 0;
+    color: #0a0a0a !important;
+    font-size: 0.88rem;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.94em;
+}
+th, td {
+    border: 1px solid #d0d7de;
+    padding: 0.5rem 0.8rem;
+    text-align: left;
+    vertical-align: top;
+    color: #0a0a0a !important;
+    background: #ffffff;
+}
+th {
+    background: #f6f8fa;
+    font-weight: 600;
+}
+blockquote {
+    margin: 1rem 0;
+    padding: 0.3rem 1rem;
+    border-left: 4px solid #d0d7de;
+    color: #444444 !important;
+    background: #fafbfc;
+}
+hr {
+    border: none;
+    height: 1px;
+    background: #d0d7de;
+    margin: 2rem 0;
+}
+ul, ol {
+    padding-left: 1.5rem;
+}
+li {
+    margin: 0.25rem 0;
+    color: #0a0a0a !important;
+}
+.nav {
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    margin: 1rem 0 2rem;
+    font-size: 0.92em;
+    color: #0a0a0a !important;
+}
+.nav strong { display: block; margin-bottom: 0.3rem; color: #000000 !important; }
+</style>
+</head>
+<body>
+<div class="nav">
+<strong>finpost runbook</strong>
+This document is self-contained &mdash; open it in any browser offline. Markdown source: <code>docs/runbooks/runpod-end-to-end.md</code>.
+</div>
+<h1 id="runpod-end-to-end-runbook-phase-1-qwen-05b-sft-ablation">RunPod end-to-end runbook — Phase 1 Qwen 0.5B SFT ablation</h1>
+<p>This is the single document you read while running <code>notebooks/sft_phase1_runpod_ablation_2000.ipynb</code> on a fresh RunPod pod. Pod creation through eval download. Every command is shown, every expected output is described, every failure mode that has actually cost money on prior runs is flagged inline.</p>
+<p>Designed to be read side-by-side with the notebook. Open the HTML version of this file locally (<code>docs/runbooks/runpod-end-to-end.html</code>) and the notebook on the pod; work down both in parallel.</p>
+<hr>
+<h2 id="section-1-what-youll-do-and-what-it-costs">Section 1 — What you'll do and what it costs</h2>
+<p>You will:</p>
+<ol>
+<li>Create a 48 GB GPU pod on RunPod (RTX 6000 Ada, RTX A6000, or A40 — any 48 GB chip).</li>
+<li>Open JupyterLab in your browser.</li>
+<li>Run a sequence of terminal commands to install the project.</li>
+<li>Open the notebook and run cells in order.</li>
+<li>The notebook runs a 50-step canary first (~1 minute, ~$0.01) — if it fails, you stop and investigate.</li>
+<li>If the canary passes, the notebook runs three 2000-step SFT arms (~45–90 min total, ~$0.33–$0.66).</li>
+<li>The notebook converts checkpoints to Hugging Face format and deletes the raw weights (~12 minutes, ~$0.09).</li>
+<li>The notebook runs the eval CLI across all 12 checkpoints on GSM8K + MATH (~30–45 min, ~$0.22–$0.33).</li>
+<li>You download the eval results via the JupyterLab file browser.</li>
+<li>You stop the pod.</li>
+</ol>
+<p><strong>Total cost: ~$0.75–$1.10 on RTX 6000 / A40.</strong> Cheaper on A6000 (~$0.49/hr) or A40 (~$0.44/hr); a bit more on RTX 6000 Ada (~$0.79/hr) but the faster chip cuts total wall time.</p>
+<hr>
+<h2 id="section-2-before-you-click-anything-on-runpod">Section 2 — Before you click anything on RunPod</h2>
+<p>What to have ready before logging into RunPod:</p>
+<ul>
+<li><strong>Weights &amp; Biases API key:</strong> OPTIONAL. The notebook auto-detects: if <code>WANDB_API_KEY</code> is set in the environment, wandb writes runs to your wandb.ai account in real time; if not, it falls back to OFFLINE mode (logs land in <code>wandb/offline-run-*/</code> and never leave the pod). Three ways to set the key when you want online logging:
+  1. <strong>RunPod pod environment variable</strong> (recommended for pod runs). When creating the pod in Section 3, scroll down on the deploy form to the "Environment Variables" field. Click "Add Variable", set Key=<code>WANDB_API_KEY</code>, Value=<code>&lt;your key from https://wandb.ai/authorize&gt;</code>. Persists for the pod's lifetime; never appears in any file or commit.
+  2. <strong>Local <code>.env</code> file</strong> (recommended for local dev runs of this notebook on a laptop). Create <code>.env</code> at the repo root with <code>WANDB_API_KEY=&lt;your key&gt;</code>. The file is gitignored. You'd need to manually <code>export $(cat .env | xargs)</code> in your shell before launching Jupyter — the notebook itself does NOT auto-load <code>.env</code>.
+  3. <strong>Manual <code>export</code> in the JupyterLab terminal</strong> before opening the notebook: <code>export WANDB_API_KEY=&lt;your key&gt;</code>. Works but you re-do it for every pod.</li>
+</ul>
+<p>The notebook's wandb-mode cell prints a one-line confirmation of which mode it picked, with the first/last 4 characters of the key (masked) so you can verify it loaded from the right source.
+- <strong>Hugging Face account / token:</strong> OPTIONAL. Only required if you want to push checkpoints to HF Hub at the end via the (commented-out) <code>hf upload</code> block in the last cell. Not needed for a normal run.
+- <strong>A local browser:</strong> for the RunPod console and JupyterLab. Any modern browser works.
+- <strong>A local terminal:</strong> only needed if you want to SCP files instead of using JupyterLab's file browser. JupyterLab's file-browser download is the easier path; SCP is the fallback.</p>
+<hr>
+<h2 id="section-3-pod-creation-step-by-step">Section 3 — Pod creation, step by step</h2>
+<h3 id="31-log-in">3.1 Log in</h3>
+<p>Go to <a href="https://www.runpod.io">https://www.runpod.io</a>, sign in.</p>
+<h3 id="32-go-to-pods-deploy">3.2 Go to Pods → Deploy</h3>
+<p>Click the <strong>Pods</strong> tab in the left sidebar, then click <strong>Deploy</strong> (or <strong>GPU Pods → Deploy</strong> depending on RunPod's current UI).</p>
+<h3 id="33-pick-a-gpu">3.3 Pick a GPU</h3>
+<p>You want a chip with <strong>48 GB VRAM</strong>. RunPod groups GPUs by name. Look for, in this preference order:</p>
+<ol>
+<li><strong>RTX 6000 Ada</strong> — fastest, ~$0.79/hr. Newest architecture, ~1.5–1.8× A40 throughput.</li>
+<li><strong>RTX A6000</strong> — cheapest of the three, ~$0.49/hr. Roughly A40-equivalent throughput.</li>
+<li><strong>A40</strong> — middle option, ~$0.44/hr. The original target chip for this recipe.</li>
+</ol>
+<p><strong>Avoid:</strong> RTX 3090 (24 GB VRAM is too tight for the bs=16 recipe). If you can't find any 48 GB chip, see the "If you can't get 48 GB" sidebar below.</p>
+<p>Click the chip you want; RunPod opens a deploy form on the right.</p>
+<h3 id="34-pick-a-template">3.4 Pick a template</h3>
+<p>Search for a PyTorch template — anything with <strong>PyTorch 2.4+</strong> on <strong>CUDA 12.x</strong>. RunPod's "PyTorch 2.4.0" or "PyTorch 2.5.0" templates are both fine. The torch version doesn't have to match what we eventually use — we'll adjust it inside the pod.</p>
+<p><strong>Avoid:</strong> any template specifying CUDA 13 or a torch wheel built for it. The pod's NVIDIA driver may not support CUDA 13, and re-installing torch is the most common bootstrap failure (covered in Section 5).</p>
+<h3 id="35-set-disk-sizes">3.5 Set disk sizes</h3>
+<p>This is the step that prevents the "no space left on device" error during training.</p>
+<ul>
+<li><strong>Container Disk:</strong> set to <strong>at least 50 GB</strong>. The default is sometimes 20 GB which is not enough.</li>
+<li><strong>Volume Disk:</strong> if shown, set to <strong>at least 50 GB</strong>. The volume persists across pod stops; the container disk does not.</li>
+</ul>
+<p>The training run plus the HF cache plus the eval artifacts peak at ~30 GB of disk in use. 50 GB gives you ~20 GB of headroom for log files, kernel files, the venv, etc.</p>
+<h3 id="36-set-the-deploy-options-and-deploy">3.6 Set the deploy options and deploy</h3>
+<p>Leave the rest of the defaults alone unless you have a reason to change them. Click <strong>Deploy</strong> (or <strong>Deploy On-Demand</strong> — avoid Spot/Interruptible for this workflow; a mid-run interruption is more expensive than the spot discount saves).</p>
+<p>RunPod will show a deployment progress bar. The pod takes 30–90 seconds to become available.</p>
+<h3 id="37-open-the-pods-controls">3.7 Open the pod's controls</h3>
+<p>When the pod's status turns green ("Running"), you'll see a card for it in <strong>My Pods</strong>. The card has buttons:
+- <strong>Connect</strong> — opens a popup with JupyterLab and SSH connection options.
+- <strong>Logs</strong> — useful only if Connect fails to open JupyterLab.
+- <strong>Stop / Terminate</strong> — covered in Section 8.</p>
+<hr>
+<h3 id="sidebar-if-you-cant-get-48-gb">Sidebar — If you can't get 48 GB</h3>
+<p>Every 48 GB chip is reserved? Two options:</p>
+<ol>
+<li><strong>Wait and re-check.</strong> RunPod's chip availability rotates. Try again in 30 minutes.</li>
+<li><strong>Fall back to RTX 3090 (24 GB).</strong> The recipe must change. In the hyperparameters cell of the notebook, change:
+   - <code>PER_DEVICE_BATCH_SIZE = 16</code> → <code>PER_DEVICE_BATCH_SIZE = 8</code>
+   - <code>GRAD_ACCUM_STEPS = 1</code> → <code>GRAD_ACCUM_STEPS = 2</code>
+   The effective batch stays at 16, training dynamics are identical, each step takes ~2.5–3× as long. Total time: ~75–90 min for the training portion instead of ~45.</li>
+</ol>
+<p>Anything smaller than a 24 GB chip (T4, K80, V100 16 GB) cannot run this recipe at all.</p>
+<hr>
+<h2 id="section-4-connecting-to-the-pod">Section 4 — Connecting to the pod</h2>
+<h3 id="41-use-jupyterlab-not-the-web-terminal">4.1 Use JupyterLab, not the web terminal</h3>
+<p>Click <strong>Connect</strong> on the pod card. You'll see options like "Start Web Terminal" and "Connect to Jupyter Lab".</p>
+<p><strong>Use JupyterLab.</strong> Reasons (from prior experience):
+- Drag-and-drop file uploads / downloads work in the file browser.
+- Copy-paste behaves like a normal browser (Ctrl+C / Ctrl+V).
+- The web terminal uses xterm.js, which has flaky copy-paste and no file transfer at all.</p>
+<h3 id="42-if-the-jupyterlab-tab-opens">4.2 If the JupyterLab tab opens</h3>
+<p>You'll see a JupyterLab interface. The file browser on the left shows <code>/workspace/</code>. If the <code>finpost</code> directory is already there, great — continue to Section 5. If not, you'll clone it in Section 5.</p>
+<h3 id="43-if-the-jupyterlab-tab-fails">4.3 If the JupyterLab tab fails</h3>
+<p>Sometimes the JupyterLab service hasn't fully started by the time RunPod says the pod is "Running". Wait 30 seconds, click Connect again. If it still doesn't load, check the pod logs from the pod card.</p>
+<hr>
+<h2 id="section-5-terminal-pre-flight-before-clicking-any-notebook-cell">Section 5 — Terminal pre-flight (before clicking any notebook cell)</h2>
+<p>In JupyterLab, open a terminal: <strong>File &gt; New &gt; Terminal</strong>. All commands below run there. Run them in order. Each guards against a real failure that has cost money on prior runs.</p>
+<h3 id="51-confirm-the-pod-has-enough-disk">5.1 Confirm the pod has enough disk</h3>
+<pre><code class="language-bash">df -h /workspace
+</code></pre>
+<p>Look at the <strong>Avail</strong> column on the <code>/workspace</code> row:</p>
+<pre><code>Filesystem      Size  Used Avail Use% Mounted on
+overlay         100G   12G   88G  12% /workspace
+</code></pre>
+<p>"88G Avail" → you're good. You need at least <strong>40 GB free</strong>.</p>
+<p><strong>If less than 40 GB:</strong> stop now. Use the pod controls to <strong>Terminate</strong> the pod (you'll lose all state), then go back to Section 3 and create a new pod with a larger Container Disk / Volume Disk. Trying to train with less disk will hit "No space left on device" mid-run.</p>
+<h3 id="52-confirm-the-gpu-is-the-one-you-asked-for">5.2 Confirm the GPU is the one you asked for</h3>
+<pre><code class="language-bash">nvidia-smi
+</code></pre>
+<p>You'll see a table. Look for:</p>
+<ul>
+<li><strong>Product Name</strong> (top): should say <code>NVIDIA RTX 6000 Ada Generation</code>, <code>NVIDIA RTX A6000</code>, or <code>NVIDIA A40</code>.</li>
+<li><strong>Memory-Usage</strong> (top right): should show ~0 MiB used / ~48 GB total (e.g., <code>0MiB / 49140MiB</code>).</li>
+<li><strong>Processes</strong> (bottom): should say "No running processes found" or be empty.</li>
+</ul>
+<p>If the <strong>Processes</strong> section lists a Python or other process using GPU memory, it's a leftover from a previous session. Kill it:</p>
+<pre><code class="language-bash">nvidia-smi --query-compute-apps=pid --format=csv,noheader
+# prints e.g.:
+# 12345
+kill -9 12345
+nvidia-smi   # re-verify Processes is now empty
+</code></pre>
+<p>If the <strong>Product Name</strong> is not what you ordered or shows less than 48 GB, you got the wrong chip. Stop, terminate, redeploy.</p>
+<h3 id="53-pull-the-latest-code">5.3 Pull the latest code</h3>
+<pre><code class="language-bash">cd /workspace
+ls
+</code></pre>
+<p>If you see a <code>finpost</code> directory, the repo is already there. Update it:</p>
+<pre><code class="language-bash">cd /workspace/finpost
+git status
+</code></pre>
+<p>If you see a long list of <code>deleted:</code> entries, the working tree got damaged on pod start (this happens sometimes; cause unclear). Restore it:</p>
+<pre><code class="language-bash">git restore .
+git status   # must now print &quot;nothing to commit, working tree clean&quot;
+</code></pre>
+<p>Then pull:</p>
+<pre><code class="language-bash">git pull
+</code></pre>
+<p>If <code>/workspace/finpost</code> doesn't exist (first-time pod), clone it:</p>
+<pre><code class="language-bash">cd /workspace
+git clone https://github.com/shannan-liu1/finpost.git
+cd finpost
+</code></pre>
+<h3 id="54-install-the-project-as-an-editable-package">5.4 Install the project as an editable package</h3>
+<pre><code class="language-bash">pip install -e &quot;.[dev]&quot;
+</code></pre>
+<p>This is a ~3 GB download (torch + CUDA wheels). Expect <strong>8–15 minutes</strong>. The "Installing collected packages" phase goes silent for several minutes as wheels link — <strong>silence is not a hang</strong>. If you want to verify pip is still alive, open a second terminal and run:</p>
+<pre><code class="language-bash">ps aux | grep -E &quot;pip|python&quot; | grep -v grep
+</code></pre>
+<p>If <code>pip</code> is in the process list, it's working. Wait for the <code>Successfully installed ...</code> line.</p>
+<h3 id="55-confirm-the-install-actually-exposes-finpost">5.5 Confirm the install actually exposes <code>finpost</code></h3>
+<p>This is the step most likely to fail silently.</p>
+<pre><code class="language-bash">python -c &quot;import finpost; print(finpost.__file__)&quot;
+</code></pre>
+<p><strong>Expected output:</strong> <code>/workspace/finpost/src/finpost/__init__.py</code></p>
+<p><strong>If you instead see <code>ModuleNotFoundError: No module named 'finpost'</code></strong> despite the pip install succeeding, the editable install's PEP 660 import hook wasn't written. This is a known pip / setuptools edge case. Diagnose:</p>
+<pre><code class="language-bash">pip show finpost   # should print version info, confirming pip thinks it's installed
+ls /usr/local/lib/python3.11/dist-packages/ | grep -i finpost
+</code></pre>
+<p>If you see <strong>only</strong> <code>finpost-0.0.1.dist-info/</code> and no <code>__editable__.finpost-*.pth</code> or similar, the hook is missing. Write the path file manually:</p>
+<pre><code class="language-bash">echo &quot;/workspace/finpost/src&quot; &gt; /usr/local/lib/python3.11/dist-packages/finpost.pth
+python -c &quot;import finpost; print(finpost.__file__)&quot;   # should now print the path
+</code></pre>
+<p>Don't spend time chasing the underlying pip/PEP 660 bug — the manual <code>.pth</code> is the canonical fallback.</p>
+<h3 id="56-confirm-torch-sees-the-gpu">5.6 Confirm torch sees the GPU</h3>
+<pre><code class="language-bash">python -c &quot;import torch; print('cuda:', torch.cuda.is_available()); print('device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')&quot;
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code>cuda: True
+device: NVIDIA RTX 6000 Ada Generation   (or A40 / RTX A6000)
+</code></pre>
+<p><strong>If you see <code>cuda: False</code></strong>, the torch wheel pip installed was built for a newer CUDA than the pod's driver supports. <code>pyproject.toml</code> pins <code>torch&gt;=2.5</code>, which makes pip pull a CUDA 13 wheel; many RunPod pods ship with NVIDIA drivers supporting only CUDA 12.x. Downgrade torch:</p>
+<pre><code class="language-bash">pip install &quot;torch==2.4.1+cu124&quot; --index-url https://download.pytorch.org/whl/cu124 --force-reinstall --no-deps
+python -c &quot;import torch; print('cuda:', torch.cuda.is_available())&quot;   # should now print True
+</code></pre>
+<p><code>--no-deps</code> keeps the rest of the install intact. The warning about mismatched <code>torchaudio</code> / <code>torchvision</code> is safe to ignore (neither is used by this notebook).</p>
+<h3 id="57-final-sanity-check">5.7 Final sanity check</h3>
+<pre><code class="language-bash">df -h /workspace &amp;&amp; nvidia-smi
+</code></pre>
+<p>Confirm both are still healthy. You're now ready to open the notebook.</p>
+<hr>
+<h2 id="section-6-notebook-execution-cell-by-cell">Section 6 — Notebook execution, cell by cell</h2>
+<p>Open <code>notebooks/sft_phase1_runpod_ablation_2000.ipynb</code> from the JupyterLab file browser. You'll click <strong>Run</strong> on each cell in order from top to bottom. <strong>Wait for each cell to finish before running the next one.</strong> A cell is finished when the <code>[*]</code> next to it turns into a number like <code>[7]</code>.</p>
+<h3 id="cell-1-pre-flight-markdown">Cell 1 — Pre-flight markdown</h3>
+<p>Read-only (markdown). Mirrors Section 5 above. Skim it.</p>
+<h3 id="cells-23-title-and-step-1-markdown">Cells 2–3 — Title and Step 1 markdown</h3>
+<p>Read-only. Tells you what to expect.</p>
+<h3 id="cell-4-nvidia-smi-df-h">Cell 4 — <code>!nvidia-smi</code> + <code>!df -h</code></h3>
+<p>Re-runs the sanity check from inside the notebook. Same expectations as 5.1 and 5.2 above. If anything is off, stop here.</p>
+<h3 id="cell-5-import-os-import-torch-import-finpost">Cell 5 — <code>import os</code>, <code>import torch</code>, <code>import finpost</code></h3>
+<p>Imports + sets <code>os.chdir(REPO_ROOT)</code>. Should print:</p>
+<pre><code>cwd: /workspace/finpost
+... finpost: 0.0.1
+torch: &lt;some version&gt;
+cuda: True
+device: NVIDIA RTX 6000 Ada Generation
+</code></pre>
+<p>If any of these is wrong, stop and go back to Section 5.</p>
+<h3 id="cell-6-step-2-markdown">Cell 6 — Step 2 markdown</h3>
+<p>Read-only.</p>
+<h3 id="cell-7-hyperparameter-cell">Cell 7 — Hyperparameter cell</h3>
+<p>Sets <code>ABLATION_STEPS = 2000</code>, <code>MAX_SEQ_LEN = 1024</code>, etc., and computes <code>warmup_steps = max(5, ABLATION_STEPS // 10) = 200</code>. Should print a block of variable names and values. No GPU work here.</p>
+<h3 id="cell-8-step-3-markdown">Cell 8 — Step 3 markdown</h3>
+<p>Read-only.</p>
+<h3 id="cell-9-generate-the-three-yaml-configs">Cell 9 — Generate the three YAML configs</h3>
+<p>Writes <code>experiments/runpod_a40/{gsm8k_only,math_only,combined}_2000_a40.yaml</code>. Should print <code>wrote experiments/runpod_a40/...</code> three times, then the contents of the <code>combined</code> config. No GPU work.</p>
+<h3 id="cell-10-initialise-hf_paths-mapping">Cell 10 — Initialise <code>hf_paths</code> mapping</h3>
+<p>One-liner: <code>hf_paths = {}</code>. Populated by the per-arm convert cells later.</p>
+<h3 id="cell-11-step-35-markdown-canary-intro">Cell 11 — Step 3.5 markdown (canary intro)</h3>
+<p>Read-only. Tells you the next cell is the gate.</p>
+<h3 id="cell-12-canary-cell-the-gate">Cell 12 — <strong>CANARY CELL</strong> (the gate)</h3>
+<p>This is the cell that protects you from paying for a doomed full run.</p>
+<p>What it does:
+- Writes a <code>canary_50_a40.yaml</code> (50 steps, warmup_steps=5, otherwise identical to production).
+- Subprocess-runs the trainer against it.
+- Checks the subprocess exit code.</p>
+<p><strong>Expected runtime:</strong> ~1–2 minutes. <strong>Expected output (last lines):</strong></p>
+<pre><code>✓ CANARY PASSED — safe to launch full 2000-step run
+</code></pre>
+<p><strong>If you see <code>✗ CANARY FAILED</code>:</strong> the cell will raise a <code>RuntimeError</code> and Jupyter will halt. <strong>Do NOT run the cells below.</strong> Inspect the stderr printed above the failure message. Common causes:</p>
+<table>
+<thead>
+<tr>
+<th>What you see in stderr</th>
+<th>What it means</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RuntimeError: Non-finite loss at step N</code></td>
+<td>NaN or inf in training. Trainer logic, mask, or hardware issue.</td>
+<td>File a bug; do not retry by just re-running — the cause is structural.</td>
+</tr>
+<tr>
+<td><code>torch.cuda.OutOfMemoryError</code></td>
+<td>GPU ran out of VRAM at this batch size.</td>
+<td>Lower <code>PER_DEVICE_BATCH_SIZE</code> in cell 7 (try 8). Re-run from cell 7.</td>
+</tr>
+<tr>
+<td><code>ValidationError: warmup_steps ... must be &lt; max_steps</code></td>
+<td>The canary's warmup override didn't apply.</td>
+<td>Verify cell 12 source still computes <code>canary_warmup = max(5, CANARY_STEPS // 10)</code>.</td>
+</tr>
+<tr>
+<td>Anything else</td>
+<td>New failure mode.</td>
+<td>Read stderr carefully; the message usually points at the cause.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cell-13-post-canary-monitor-df-h-workspace-nvidia-smi">Cell 13 — Post-canary monitor (<code>!df -h /workspace; !nvidia-smi</code>)</h3>
+<p>Should show ~30+ GB free disk and ~0 MB GPU memory used (canary released its allocations on subprocess exit). If GPU memory is still in use, see Section 7.</p>
+<h3 id="cell-14-step-4-markdown">Cell 14 — Step 4 markdown</h3>
+<p>Read-only.</p>
+<h3 id="cell-15-wandb-mode-auto-detect">Cell 15 — WANDB mode auto-detect</h3>
+<p>Inspects <code>os.environ['WANDB_API_KEY']</code>. If set, switches wandb to <strong>online</strong> (your runs appear at wandb.ai in real time). If not set, falls back to <strong>offline</strong> (runs written to <code>wandb/offline-run-*/</code> on the pod; you can manually sync them later or just ignore them). Prints a one-line confirmation with the first/last 4 chars of the key (masked) when online so you can verify the right key loaded.</p>
+<p>If you set the key in RunPod's pod env vars (recommended), it should already be visible — the cell's output should say <code>WANDB_MODE = online</code>. If you forgot, just run <code>export WANDB_API_KEY=&lt;your key&gt;</code> in a terminal, restart the JupyterLab kernel, and re-run from cell 4.</p>
+<h3 id="cells-1617-arm-1-gsm8k_only-train-then-convertcleanup">Cells 16–17 — Arm 1: gsm8k_only train, then convert+cleanup</h3>
+<p>Cell 16: <code>!python -m finpost.training.train --config &lt;gsm8k_only_yaml&gt;</code>. Runs for ~15–30 min. You'll see training progress lines, periodic validation losses, checkpoint saves at steps 500/1000/1500/2000.</p>
+<p><strong>Expected output (last lines):</strong> the trainer's "Training complete" message and the path of the final checkpoint.</p>
+<p><strong>If the cell raises:</strong> stop. The same failure-cause table as the canary applies. Note that the canary should have caught these, so a failure here is unexpected — most likely a transient OOM if disk or GPU memory got fragmented.</p>
+<p>Cell 17: converts the 4 intermediate checkpoints to HF format, then <code>rm -rf</code>s the raw <code>step-*</code> directories. Saves ~8 GB of disk. Should print 4 <code>[gsm8k_only] converting step-NNN:</code> blocks, 4 <code>[gsm8k_only] deleted raw ...</code> lines, and a final <code>df -h</code> line.</p>
+<h3 id="cells-1819-arm-2-math_only-train-then-convertcleanup">Cells 18–19 — Arm 2: math_only train, then convert+cleanup</h3>
+<p>Same pattern as arm 1.</p>
+<h3 id="cells-2021-arm-3-combined-train-then-convertcleanup">Cells 20–21 — Arm 3: combined train, then convert+cleanup</h3>
+<p>Same pattern as arms 1 and 2.</p>
+<h3 id="cell-22-post-arm3-monitor">Cell 22 — Post-arm3 monitor</h3>
+<p>Should show ~25+ GB free disk and ~0 MB GPU memory used. The interleaved cleanup has kept peak disk under ~25 GB the whole time.</p>
+<h3 id="cells-2324-step-5-markdown-verify-hf-dirs">Cells 23–24 — Step 5 markdown + verify HF dirs</h3>
+<p>Cell 24 loops over (arm, step) and prints <code>OK</code> or <code>MISSING</code> for each. Should be all <code>OK</code>. If anything is <code>MISSING</code>, the convert+cleanup for that arm failed silently — stop and inspect.</p>
+<h3 id="cells-2526-step-7-markdown-eval">Cells 25–26 — Step 7 markdown + eval</h3>
+<p>Cell 26 runs <code>!python -m finpost.evals.eval_exact ...</code> with 12 checkpoints × 2 sources. Runtime: ~30–45 min. You'll see batched generation progress, then accuracy + cost summaries.</p>
+<p><strong>If the cell raises OOM:</strong> the eval CLI has internal <code>_generate_chunk_with_oom_fallback</code> that halves batch size on OOM. If you see "OOM halving batch from 128 to 64" in the output, that's the fallback working — let it continue. If it fails again at 64, lower <code>BATCH_SIZE_GSM8K</code> / <code>BATCH_SIZE_MATH</code> in cell 7 and re-run only this cell.</p>
+<h3 id="cells-2729-step-8-markdown-display-headline-numbers-trajectory-table">Cells 27–29 — Step 8 markdown + display headline numbers + trajectory table</h3>
+<p>Loads and prints the eval summary CSV and cost JSON. No GPU work — just file reads.</p>
+<h3 id="cell-30-step-9-markdown">Cell 30 — Step 9 markdown</h3>
+<p>Read-only.</p>
+<h3 id="cell-31-tarball-the-eval-results">Cell 31 — Tarball the eval results</h3>
+<p><code>!tar -czf ... &amp;&amp; !ls -lah ...</code>. Creates <code>results/evals/ablation_a40_run_1.tar.gz</code>. Should print the file size (~few MB).</p>
+<h3 id="cells-3233-step-10-optional-hf-push">Cells 32–33 — Step 10 (optional HF push)</h3>
+<p>Commented out by default. Skip unless you specifically want the checkpoints on HF Hub.</p>
+<h3 id="cell-34-final-markdown">Cell 34 — Final markdown</h3>
+<p>Read-only. Tells you to download the tarball and stop the pod (Section 8).</p>
+<hr>
+<h2 id="section-7-mid-flow-monitoring">Section 7 — Mid-flow monitoring</h2>
+<p>The two monitoring cells (post-canary and post-arm3) print disk and GPU snapshots. Here's how to read them.</p>
+<h3 id="df-h-workspace"><code>df -h /workspace</code></h3>
+<p>Healthy = ≥25 GB <strong>Avail</strong>. If it drops below 10 GB you're in danger of "no space left" during the next operation. Investigate before continuing.</p>
+<h3 id="nvidia-smi"><code>nvidia-smi</code></h3>
+<p>Healthy = the <strong>Memory-Usage</strong> column shows ~0 MiB used (the previous subprocess released its allocations on exit). The <strong>Processes</strong> section should be empty.</p>
+<p>If Memory-Usage shows non-zero use but Processes is empty: that's "lingering allocation," usually a CUDA context that didn't fully release. Open a terminal and run:</p>
+<pre><code class="language-bash">nvidia-smi --query-compute-apps=pid --format=csv,noheader
+</code></pre>
+<p>If it returns a PID, <code>kill -9 &lt;pid&gt;</code>. If it returns nothing but the memory is still showing as used, restart the JupyterLab kernel: <strong>Kernel &gt; Restart Kernel</strong>. The next cell will need to re-import torch but otherwise picks up where it left off (the trained checkpoints on disk are untouched by a kernel restart).</p>
+<hr>
+<h2 id="section-8-after-eval-download-and-stop">Section 8 — After eval: download and stop</h2>
+<h3 id="81-download-the-eval-tarball">8.1 Download the eval tarball</h3>
+<p>In JupyterLab's file browser (left side), navigate to <code>results/evals/</code>. Right-click <code>ablation_a40_run_1.tar.gz</code> and click <strong>Download</strong>. The file is small (~few MB) — downloads in seconds.</p>
+<p>If you also want individual files (CSVs, per-row details), navigate into <code>results/evals/ablation_a40_run_1/</code> and download whatever you want.</p>
+<h3 id="82-optional-push-checkpoints-to-hf-hub">8.2 Optional: push checkpoints to HF Hub</h3>
+<p>If you want to keep the trained checkpoints accessible without keeping the pod alive, run:</p>
+<pre><code class="language-bash">hf auth login   # in a terminal; paste your Write token
+</code></pre>
+<p>Then uncomment cell 33 of the notebook and run it. ~12 GB to upload (4 ckpts × 3 arms × ~1 GB HF format).</p>
+<h3 id="83-stop-or-terminate-the-pod">8.3 Stop or terminate the pod</h3>
+<p>In the RunPod console, on your pod's card:</p>
+<ul>
+<li><strong>Stop Pod</strong> — billing pauses, volume persists. Use this if you'll be back within a few days. You pay ~$0.10/day for the stopped volume.</li>
+<li><strong>Terminate Pod</strong> — frees everything, including the venv and checkpoints. Use this only after you've downloaded everything you care about.</li>
+</ul>
+<p><strong>Verify your cost</strong> from <code>cost_summary.json</code> in the eval output. That's the authoritative number; the estimates in Section 1 are planning numbers only.</p>
+<hr>
+<h2 id="section-9-troubleshooting-appendix">Section 9 — Troubleshooting appendix</h2>
+<p>Index of failure modes covered inline above, with pointer to where they live:</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Where to read</th>
+<th>One-line fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"No space left on device" during training</td>
+<td>Section 5.1, Section 7</td>
+<td>Confirm ≥40 GB free before launching; if not, redeploy with bigger volume.</td>
+</tr>
+<tr>
+<td><code>cuda: False</code> after install</td>
+<td>Section 5.6</td>
+<td>Downgrade torch to <code>2.4.1+cu124</code>.</td>
+</tr>
+<tr>
+<td><code>ModuleNotFoundError: No module named 'finpost'</code> despite pip install</td>
+<td>Section 5.5</td>
+<td>Write <code>/usr/local/lib/python3.11/dist-packages/finpost.pth</code> by hand.</td>
+</tr>
+<tr>
+<td><code>git status</code> shows huge list of <code>deleted:</code> files</td>
+<td>Section 5.3</td>
+<td><code>git restore .</code>.</td>
+</tr>
+<tr>
+<td><code>pip install</code> hangs at "Installing collected packages"</td>
+<td>Section 5.4</td>
+<td>Wait — silence is not a hang. Verify via <code>ps aux</code> from a second terminal.</td>
+</tr>
+<tr>
+<td>Canary cell raises <code>RuntimeError: Non-finite loss</code></td>
+<td>Section 6, Cell 12</td>
+<td>Structural bug. Do not retry blind. File issue.</td>
+</tr>
+<tr>
+<td>Canary cell raises <code>torch.cuda.OutOfMemoryError</code></td>
+<td>Section 6, Cell 12</td>
+<td>Lower <code>PER_DEVICE_BATCH_SIZE</code> in cell 7.</td>
+</tr>
+<tr>
+<td>Canary cell raises <code>ValidationError: warmup_steps ... must be &lt; max_steps</code></td>
+<td>Section 6, Cell 12</td>
+<td>Cell source corruption — verify the canary computes its own <code>warmup_steps</code>.</td>
+</tr>
+<tr>
+<td>Training cell raises OOM mid-run after canary passed</td>
+<td>Section 7</td>
+<td>Likely GPU-fragmentation. Kernel restart, then re-run the failing arm's training cell.</td>
+</tr>
+<tr>
+<td>Eval cell raises OOM</td>
+<td>Section 6, Cell 26</td>
+<td>Internal fallback halves batch automatically; if it still fails, lower <code>BATCH_SIZE_GSM8K</code> / <code>BATCH_SIZE_MATH</code> in cell 7 and re-run only the eval cell.</td>
+</tr>
+<tr>
+<td><code>nvidia-smi</code> shows memory used but no process</td>
+<td>Section 7</td>
+<td>Kernel restart.</td>
+</tr>
+<tr>
+<td>Verify-HF cell prints <code>MISSING</code> for some checkpoint</td>
+<td>Section 6, Cell 24</td>
+<td>Convert+cleanup for that arm failed silently. Re-run that arm's convert cell.</td>
+</tr>
+<tr>
+<td>JupyterLab won't open</td>
+<td>Section 4.3</td>
+<td>Wait 30s, retry Connect, then check pod Logs.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="appendix-what-this-runbook-intentionally-does-not-cover">Appendix — What this runbook intentionally does NOT cover</h2>
+<ul>
+<li><strong>Multi-chip recipes other than 48 GB.</strong> RTX 3090 fallback is mentioned in the Section 3 sidebar; anything below 24 GB cannot run this recipe.</li>
+<li><strong>Mid-run pod crash recovery.</strong> Out of scope. The canary + interleaved cleanup is the primary defense; if a pod genuinely dies mid-run, treat it as a restart from the top.</li>
+<li><strong>Phase 2 / DPO / GRPO workflows.</strong> This runbook is for the Phase 1 SFT ablation only. Other workstreams have their own runbooks under <code>docs/runbooks/</code>.</li>
+<li><strong>The from-scratch trainer's internals.</strong> Documented in <code>src/finpost/training/</code> source files and in the trainer's own docstrings.</li>
+</ul>
+<hr>
+<p><em>Last updated: 2026-05-18. If you hit a failure mode not covered here, add it.</em></p>
+</body>
+</html>
