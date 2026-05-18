@@ -74,3 +74,4 @@ Anything we know but haven't resolved. Not load-bearing — just memory.
 | [`phase1-dpo-comparison`](./phase1-dpo-comparison/PRD.md) | Phase 1 DPO trainer and SFT comparison (fixed offline preference dataset; offline-DPO vs. on-policy-OPD is a deliberate split) | Not Started |
 | [`phase1-grpo-research`](./phase1-grpo-research/PRD.md) | GRPO research track for verifiable numerical reasoning (consumes Phase 1.5 rollout cache and verifier) | Not Started |
 | [`phase2-filing-distillation-dataset`](./phase2-filing-distillation-dataset/PRD.md) | Phase 2 filing distillation dataset | Not Started |
+| [`runpod-canary-and-runbook`](./runpod-canary-and-runbook/PRD.md) | RunPod canary + interleaved cleanup + end-to-end HTML runbook (Phase 1 ablation flow) | In Progress |
