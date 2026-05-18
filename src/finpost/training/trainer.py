@@ -45,6 +45,7 @@ import wandb
 from torch.utils.data import DataLoader
 
 from finpost.safety import safe_load_model, safe_load_tokenizer
+from finpost.training._guards import check_finite_loss
 from finpost.training.checkpoint import (
     apply_retention_policy,
     load_checkpoint,
@@ -348,6 +349,7 @@ class Trainer:
             # accumulation below (see ``loss.detach().float()`` a few lines
             # down) so precision isn't lost across micro-batches in bf16.
             loss = self._forward_loss(batch)
+            check_finite_loss(loss, self.global_step)
 
             # Useful tokens = response positions = labels != IGNORE_INDEX.
             # We count them on CPU because the labels are already there
