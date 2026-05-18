@@ -79,3 +79,80 @@ Each pipeline owns its own:
 The combined Phase 1 evaluation surface then has at least four arms — Base, SFT, SFT+DPO (this workstream), SFT+OPD (Phase 1.5) — measured on the same harness. A merged "preference-pair builder" abstraction is explicitly deferred until both pipelines have produced a first result; merging earlier would collapse the offline-vs-on-policy distinction.
 
 Deliverables restored: `scripts/build_dpo_pairs.py` and `src/finpost/training/preference_data.py` belong to this workstream.
+
+## Amendment 2026-05-18 - DPO implementation and RunPod study surface
+
+The DPO workstream now needs two outputs, not just the trainer:
+
+1. A from-scratch Direct Preference Optimization implementation that can be
+   tested locally and then run from a Qwen SFT checkpoint on RunPod.
+2. A human-readable DPO study guide under `docs/` that explains the experiment
+   sequence, GPU requirements, commands, and decision gates before the user
+   spends GPU time.
+
+### Updated scope
+
+**In scope:**
+- Build a fixed offline preference-pair dataset from the best SFT checkpoint
+  produced by the RunPod SFT ablation.
+- Keep pair construction separate from the Phase 1.5 on-policy rollout cache.
+- Implement DPO loss, collation, trainer, checkpointing, resume, and a RunPod
+  operator surface.
+- Compare Base, SFT-best, and SFT+DPO on the exact-answer evaluation harness.
+- Report cost, GPU-hours, pair yield, all-correct/all-incorrect prompt rates,
+  and whether DPO improves, harms, or is indistinguishable from SFT.
+- Maintain `docs/dpo-study.html` as the plain-English run guide.
+
+**Out of scope:**
+- GRPO, PPO, or online RL updates.
+- Finance-domain DPO pairs before the Phase 1 math result exists.
+- Using TRL's trainer as the implementation. TRL remains a parity reference
+  only.
+- LLM-as-judge for math correctness.
+
+### Updated implementation decisions
+
+- The policy and reference models both start from the same SFT checkpoint.
+- The reference model is frozen and used only for log-probabilities.
+- The first DPO target is full fine-tuning of `Qwen/Qwen2.5-0.5B`; LoRA is a
+  fallback only if the 48 GB GPU path fails.
+- Preference-pair generation samples from held-out training prompts only, never
+  from GSM8K or MATH test prompts.
+- Prompts where every completion is correct or every completion is incorrect
+  produce zero DPO pairs and are written to the manifest as quality signals.
+- The initial production GPU target is one 48 GB card: A40, RTX A6000, or RTX
+  6000 Ada. Older 24 GB Quadro RTX 6000 cards are not the default target for
+  full fine-tuning.
+
+### Updated deliverables
+
+- `src/finpost/training/preference_data.py`
+- `scripts/build_dpo_pairs.py`
+- `src/finpost/training/dpo.py`
+- `src/finpost/training/dpo_train.py`
+- `experiments/dpo/qwen_dpo_baseline.yaml`
+- `notebooks/dpo_phase1_runpod.ipynb`
+- `docs/dpo-study.html`
+- `tests/test_preference_data.py`
+- `tests/test_dpo.py`
+- `tests/test_dpo_train_cli.py`
+
+### Updated acceptance criteria
+
+1. Preference-pair generation writes `pairs.jsonl`, `completions.jsonl`, and
+   `manifest.json` with source checkpoint, prompt ids, sampling parameters,
+   verifier version, pair counts, all-correct counts, and all-incorrect counts.
+2. Pair construction is deterministic for fixed prompt set, checkpoint id,
+   seed, and sampling parameters.
+3. DPO loss matches a TRL/reference calculation within `1e-5` on a fixed tiny
+   batch and keeps the reference model gradient-free.
+4. TinyGPT DPO soft launch passes before any Qwen DPO run.
+5. Qwen DPO canary runs for 20-50 steps on a 48 GB GPU without non-finite loss
+   or out-of-memory failure.
+6. A full DPO run can resume from checkpoint and produce an HF-format policy
+   checkpoint for `eval_exact`.
+7. The final comparison uses the same held-out eval prompts for Base, SFT-best,
+   and SFT+DPO and includes confidence intervals, cost ledger, response-length
+   statistics, and at least 10 qualitative deltas.
+8. `docs/dpo-study.html` states the run order, GPU choice, minimum VRAM,
+   expected failure modes, and the exact artifacts to preserve.

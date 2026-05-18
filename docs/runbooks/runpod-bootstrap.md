@@ -29,12 +29,12 @@ The pod is assumed to have:
 cd /workspace
 git clone https://github.com/shannan-liu1/finpost.git   # first time only
 cd finpost
-git pull
+git pull --ff-only
 ```
 
 ## 2. Restore the working tree if files are missing
 
-Pods sometimes start with tracked files **deleted from the working tree** (root cause unclear — possibly cleanup hooks in the base image; happens even when the pod's volume is the same as a previous session). The deletions are unstaged, so `git pull` succeeds while the source tree is half-empty.
+Pods sometimes start with tracked files **deleted from the working tree** (root cause unclear — possibly cleanup hooks in the base image; happens even when the pod's volume is the same as a previous session). The deletions are unstaged, so `git pull --ff-only` succeeds while the source tree is half-empty.
 
 ```bash
 git status
@@ -115,7 +115,7 @@ Note: this downgrade leaves `torchaudio` / `torchvision` mismatched if they were
 
 ## 6. Open the experiment notebook
 
-Open `notebooks/sft_phase1_runpod_ablation_2000.ipynb` (or the relevant experiment notebook). The notebook's own first code cell runs `git pull` and `import finpost` — both should now succeed. Run cells in order.
+Open `notebooks/sft_phase1_runpod_ablation_2000.ipynb` (or the relevant experiment notebook). The notebook's own first code cell runs `git pull --ff-only` and `import finpost` — both should now succeed. Run cells in order.
 
 If you are coming back to a running notebook after a kernel restart, you do **not** need to re-run steps 1–5; the pod state persists. Steps 4 and 5 only need a re-check if you re-installed packages.
 
@@ -123,7 +123,7 @@ If you are coming back to a running notebook after a kernel restart, you do **no
 
 | Symptom | Most likely cause | Fix |
 |---|---|---|
-| `git pull` shows huge list of `deleted:` files in `git status` | Working-tree damage on pod start | `git restore .` |
+| `git pull --ff-only` shows huge list of `deleted:` files in `git status` | Working-tree damage on pod start | `git restore .` |
 | `pip install` hangs at "Installing collected packages" | Normal — pip is silently linking wheels | Wait. Verify via `ps aux` from a second terminal. |
 | `pip show finpost` works, `import finpost` fails | PEP 660 import hook never written | `echo "/workspace/finpost/src" > /usr/local/lib/python3.11/dist-packages/finpost.pth` |
 | `torch.cuda.is_available()` returns `False` after install | CUDA 13 wheel vs CUDA 12.x driver | Downgrade torch to `2.4.1+cu124` |

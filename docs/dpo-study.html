@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>finpost - Phase 1 DPO Study</title>
+  <style>
+    :root {
+      --bg: #fbfbfa;
+      --fg: #18202f;
+      --muted: #5c6678;
+      --line: #d9dee7;
+      --panel: #ffffff;
+      --soft: #eef3fb;
+      --ok: #236b3d;
+      --warn: #9a6200;
+      --bad: #9f3030;
+      --code: #f2f4f8;
+      --max: 980px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.58 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 42px 22px 80px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 22px;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 36px 0 14px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--line);
+      font-size: 1.38rem;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 24px 0 8px;
+      font-size: 1.04rem;
+    }
+
+    p { margin: 0 0 14px; }
+    ul, ol { margin: 0 0 16px 22px; padding: 0; }
+    li { margin: 5px 0; }
+    a { color: #244f86; }
+
+    .lede {
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 820px;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-top: 12px;
+    }
+
+    .callout {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin: 18px 0;
+    }
+
+    .callout strong { display: block; margin-bottom: 6px; }
+    .ok { border-left: 4px solid var(--ok); }
+    .warn { border-left: 4px solid var(--warn); }
+    .bad { border-left: 4px solid var(--bad); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--soft);
+      font-weight: 700;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    code {
+      background: var(--code);
+      border-radius: 4px;
+      padding: 0.12rem 0.28rem;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow-x: auto;
+      padding: 14px 16px;
+      margin: 10px 0 18px;
+    }
+
+    pre code {
+      background: transparent;
+      padding: 0;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Phase 1 Direct Preference Optimization Study</h1>
+    <p class="lede">
+      Runbook and implementation map for adding Direct Preference Optimization
+      after the Qwen 0.5B supervised fine-tuning ablation. This is the offline
+      preference track: one fixed pair dataset, one policy update, one honest
+      comparison against SFT-best.
+    </p>
+    <p class="meta">
+      Last updated: 2026-05-18. Source workstream:
+      <code>.scratch/phase1-dpo-comparison/PRD.md</code>.
+    </p>
+  </header>
+
+  <section>
+    <h2>Decision Summary</h2>
+    <div class="callout ok">
+      <strong>GPU answer</strong>
+      A single 48 GB GPU is the right target for the first full DPO run.
+      A40 is okay. RTX A6000 is okay. RTX 6000 Ada is okay. Be careful with
+      the name "RTX 6000": the older Quadro RTX 6000 is a 24 GB card and is
+      not the default target for full fine-tuning.
+    </div>
+    <ul>
+      <li>Start DPO only after the SFT ablation chooses an SFT-best checkpoint.</li>
+      <li>Use held-out training prompts for preference pairs. Never use test prompts.</li>
+      <li>Policy model and reference model both start from the same SFT checkpoint.</li>
+      <li>Reference model is frozen; only the policy model is updated.</li>
+      <li>Evaluate Base, SFT-best, and SFT+DPO on the same exact-answer harness.</li>
+      <li>If DPO is not measurably better than SFT, say that and move on.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What DPO Is Testing</h2>
+    <p>
+      Direct Preference Optimization trains from triples:
+      <code>prompt</code>, <code>chosen response</code>, and
+      <code>rejected response</code>. The objective widens the margin between
+      the policy model's preference for the chosen response and the rejected
+      response, measured relative to a frozen reference model.
+    </p>
+    <pre><code>loss = -log_sigmoid(
+    beta * (
+        (logp_policy(chosen | prompt) - logp_ref(chosen | prompt))
+      - (logp_policy(rejected | prompt) - logp_ref(rejected | prompt))
+    )
+)</code></pre>
+    <p>
+      For this repo, the preference label comes from programmatic math grading:
+      a correct final answer beats an incorrect final answer for the same prompt.
+      Prompts where every sampled completion is correct or every sampled
+      completion is incorrect produce no pair and are recorded as quality
+      signals in the manifest.
+    </p>
+  </section>
+
+  <section>
+    <h2>Study Sequence</h2>
+    <ol>
+      <li>
+        Finish the RunPod SFT ablation and pick SFT-best from
+        <code>results/evals/ablation_a40_run_1/accuracy_summary.csv</code>.
+      </li>
+      <li>
+        Build a held-out training prompt set from GSM8K and MATH. This prompt
+        set must be disjoint from the eval prompts.
+      </li>
+      <li>
+        Generate <code>K=8</code> completions per prompt from the SFT-best
+        checkpoint at temperature <code>0.8</code>.
+      </li>
+      <li>
+        Grade every completion with the exact-answer verifier path used by the
+        eval harness.
+      </li>
+      <li>
+        Build <code>pairs.jsonl</code> by pairing correct completions against
+        incorrect completions for the same prompt.
+      </li>
+      <li>
+        Run the DPO loss parity test against a reference calculation before
+        launching any trainer.
+      </li>
+      <li>
+        Run TinyGPT DPO as the infrastructure canary.
+      </li>
+      <li>
+        Run a 20-50 step Qwen DPO canary on the 48 GB GPU. Stop if loss is
+        non-finite, pair batches do not fit, or throughput is unreasonable.
+      </li>
+      <li>
+        Run the full DPO baseline from SFT-best.
+      </li>
+      <li>
+        Convert the DPO checkpoint to Hugging Face format and evaluate Base,
+        SFT-best, and SFT+DPO on the same held-out GSM8K and MATH prompts.
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Target Commands</h2>
+    <p>
+      These commands are implementation targets. They become runnable after the
+      issues under <code>.scratch/phase1-dpo-comparison/issues/</code> land.
+    </p>
+    <h3>Build preference pairs</h3>
+    <pre><code>python scripts/build_dpo_pairs.py \
+  --sft-checkpoint results/checkpoints/qwen-combined-2000s-a40-step2000-hf \
+  --sources gsm8k math \
+  --heldout-train-n 2000 \
+  --samples-per-prompt 8 \
+  --temperature 0.8 \
+  --seed 42 \
+  --out-dir results/dpo_pairs/qwen_sft_best_k8_v1</code></pre>
+
+    <h3>Run DPO canary</h3>
+    <pre><code>python -m finpost.training.dpo_train \
+  --config experiments/dpo/qwen_dpo_baseline.yaml \
+  --device cuda \
+  --max-steps 50</code></pre>
+
+    <h3>Run full DPO</h3>
+    <pre><code>python -m finpost.training.dpo_train \
+  --config experiments/dpo/qwen_dpo_baseline.yaml \
+  --device cuda</code></pre>
+
+    <h3>Evaluate the comparison</h3>
+    <pre><code>python -m finpost.evals.eval_exact \
+  --checkpoints \
+    base=Qwen/Qwen2.5-0.5B \
+    sft_best=results/checkpoints/qwen-combined-2000s-a40-step2000-hf \
+    dpo=results/checkpoints/qwen-dpo-baseline-a40-hf \
+  --sources gsm8k math \
+  --n 500 \
+  --seed 42 \
+  --out-dir results/evals/dpo_phase1_run_1 \
+  --batch-size-gsm8k 128 \
+  --batch-size-math 128 \
+  --gpu-cost-per-hour 0.44 \
+  --device cuda</code></pre>
+  </section>
+
+  <section>
+    <h2>GPU Sizing</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>GPU</th>
+          <th>VRAM</th>
+          <th>Use for full Qwen 0.5B DPO?</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>A40</td>
+          <td>48 GB</td>
+          <td>Yes</td>
+          <td>Best default on RunPod if price is reasonable. Ampere bf16 path is suitable.</td>
+        </tr>
+        <tr>
+          <td>RTX A6000</td>
+          <td>48 GB</td>
+          <td>Yes</td>
+          <td>Comparable memory class to A40; active workstation cooling.</td>
+        </tr>
+        <tr>
+          <td>RTX 6000 Ada</td>
+          <td>48 GB</td>
+          <td>Yes</td>
+          <td>Good choice if available. Newer Ada card, also 48 GB ECC.</td>
+        </tr>
+        <tr>
+          <td>Quadro RTX 6000</td>
+          <td>24 GB</td>
+          <td>No for default full fine-tune</td>
+          <td>Use only for tiny canaries, LoRA fallback, or reduced batch/sequence tests.</td>
+        </tr>
+        <tr>
+          <td>A100 / H100</td>
+          <td>40-80+ GB</td>
+          <td>Yes</td>
+          <td>Faster, but not required for Qwen 0.5B. Use only if price/time tradeoff wins.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      The reason 48 GB is the target is not raw parameter size. Qwen 0.5B itself
+      is small. DPO adds cost because each batch carries chosen and rejected
+      responses and needs policy and reference log-probabilities. A conservative
+      full fine-tune budget is:
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Approximate memory</th>
+          <th>Why it matters</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Policy weights, bf16</td>
+          <td>~1 GB</td>
+          <td>Trainable model initialized from SFT-best.</td>
+        </tr>
+        <tr>
+          <td>Reference weights, bf16</td>
+          <td>~1 GB</td>
+          <td>Frozen model for reference log-probabilities.</td>
+        </tr>
+        <tr>
+          <td>Gradients</td>
+          <td>~1 GB</td>
+          <td>Policy model only.</td>
+        </tr>
+        <tr>
+          <td>AdamW state</td>
+          <td>~4 GB</td>
+          <td>Two fp32 moment buffers for policy parameters.</td>
+        </tr>
+        <tr>
+          <td>Activations and pair batches</td>
+          <td>~6-18 GB</td>
+          <td>Depends on pair micro-batch, sequence length, and forward strategy.</td>
+        </tr>
+        <tr>
+          <td>Runtime overhead and fragmentation</td>
+          <td>Several GB</td>
+          <td>CUDA allocator, tokenizer/model buffers, temporary logits.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout warn">
+      <strong>Initial DPO hyperparameter stance</strong>
+      Start with <code>max_seq_len=1024</code>, bf16, pair micro-batch
+      <code>2-4</code>, gradient accumulation to recover effective batch size,
+      <code>beta=0.1</code>, and learning rate in the <code>1e-6</code> to
+      <code>5e-6</code> range. Increase pair batch only after the canary shows
+      memory headroom and stable loss.
+    </div>
+  </section>
+
+  <section>
+    <h2>Stop / Go Gates</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Gate</th>
+          <th>Go condition</th>
+          <th>Stop condition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Pair yield</td>
+          <td>Enough mixed prompt groups to produce a useful pair set.</td>
+          <td>Most prompts are all-correct or all-incorrect; adjust prompt set or K.</td>
+        </tr>
+        <tr>
+          <td>Loss parity</td>
+          <td>Local DPO loss matches reference within <code>1e-5</code>.</td>
+          <td>Any disagreement before training. Fix math first.</td>
+        </tr>
+        <tr>
+          <td>Qwen canary</td>
+          <td>20-50 steps, finite loss, checkpoint written, no OOM.</td>
+          <td>Non-finite loss, OOM, reference gradients, or missing checkpoint.</td>
+        </tr>
+        <tr>
+          <td>Full DPO eval</td>
+          <td>SFT+DPO beats or ties SFT within clear confidence intervals.</td>
+          <td>DPO hurts MATH materially or only improves parse rate without accuracy.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Artifacts To Preserve</h2>
+    <ul>
+      <li><code>results/dpo_pairs/&lt;run_id&gt;/manifest.json</code></li>
+      <li><code>results/dpo_pairs/&lt;run_id&gt;/pairs.jsonl</code></li>
+      <li><code>results/checkpoints/qwen-dpo-baseline-a40/</code></li>
+      <li><code>results/checkpoints/qwen-dpo-baseline-a40-hf/</code></li>
+      <li><code>results/evals/dpo_phase1_run_1/accuracy_summary.csv</code></li>
+      <li><code>results/evals/dpo_phase1_run_1/cost_summary.json</code></li>
+      <li>Training stdout/stderr tail and wandb offline run directory.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>References</h2>
+    <ul>
+      <li>
+        <a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization paper</a>
+      </li>
+      <li>
+        <a href="https://huggingface.co/docs/trl/main/en/dpo_trainer">Hugging Face TRL DPOTrainer docs</a>
+      </li>
+      <li>
+        <a href="https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a40/proviz-print-nvidia-a40-datasheet-us-nvidia-1469711-r8-web.pdf">NVIDIA A40 datasheet</a>
+      </li>
+      <li>
+        <a href="https://www.nvidia.com/en-us/products/workstations/rtx-6000/">NVIDIA RTX 6000 Ada specifications</a>
+      </li>
+      <li>
+        <a href="https://www.nvidia.com/content/dam/en-zz/Solutions/design-visualization/quadro-product-literature/proviz-print-nvidia-rtx-a6000-datasheet-us-nvidia-1454980-r9-web%20%281%29.pdf">NVIDIA RTX A6000 datasheet</a>
+      </li>
+      <li>
+        <a href="https://www.nvidia.com/en-au/products/workstations/quadro/rtx-6000/">NVIDIA Quadro RTX 6000 specifications</a>
+      </li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

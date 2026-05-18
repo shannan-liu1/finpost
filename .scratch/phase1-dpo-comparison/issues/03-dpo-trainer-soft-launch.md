@@ -1,26 +1,39 @@
-# 03 - DPO trainer soft launch
+# 03 - Add DPO trainer and soft-launch path
 
 - **Status:** Not Started
-- **Ready for agent:** no
+- **Ready for agent:** yes
 - **Depends on:** 02-dpo-loss-and-parity
 
-## Goal
+## Parent
 
-Run a short DPO training path through TinyGPT first, then Qwen 0.5B.
+`.scratch/phase1-dpo-comparison/PRD.md`
 
-## Scope
+## What to build
 
-**In scope:** DPO trainer loop, offline tracking, checkpointing, resume, short soft-launch configs.
-
-**Out of scope:** full DPO ablation matrix.
+Add the DPO training loop, CLI, config, checkpointing, resume, and offline
+tracking path by reusing the SFT trainer infrastructure wherever possible.
+Run TinyGPT first, then a Qwen 0.5B canary on the target GPU before any full
+DPO study.
 
 ## Acceptance criteria
 
-- TinyGPT DPO soft launch runs end to end with offline tracking and checkpointing.
-- Qwen 0.5B DPO soft launch runs after the SFT checkpoint exists.
-- DPO checkpoints include policy model, optimizer state, scheduler state, step, config, and source SFT checkpoint metadata.
-- Resume from DPO checkpoint reproduces the same continuation loss within tolerance.
+- [ ] `src/finpost/training/dpo_train.py` loads a DPO config and launches
+      training from a policy checkpoint plus frozen reference checkpoint.
+- [ ] `experiments/dpo/qwen_dpo_baseline.yaml` defines model, pair data,
+      training, beta, packing, logging, and checkpointing settings.
+- [ ] Checkpoints include policy weights, optimizer state, scheduler state,
+      global step, config, pair manifest id, and source SFT checkpoint id.
+- [ ] Resume from a DPO checkpoint reproduces continuation loss within
+      tolerance on a fixed fixture.
+- [ ] TinyGPT DPO soft launch runs end to end on local/CPU.
+- [ ] Qwen DPO canary runs for 20-50 steps on RunPod without non-finite loss
+      or out-of-memory failure before the full run starts.
 
-## Notes / open questions
+## Verification
 
-- DPO soft launch should reuse the SFT trainer infrastructure wherever possible instead of creating a separate logging/checkpointing stack.
+- `.\.venv\Scripts\python.exe -m pytest tests/test_dpo_train_cli.py tests/test_checkpoint.py`
+- RunPod canary command recorded in `docs/dpo-study.html`.
+
+## Blocked by
+
+Requires issue 02. The Qwen canary requires a real SFT checkpoint and 48 GB GPU.

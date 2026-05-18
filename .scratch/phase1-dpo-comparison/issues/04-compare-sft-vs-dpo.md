@@ -1,27 +1,38 @@
 # 04 - Compare SFT against SFT plus DPO
 
 - **Status:** Not Started
-- **Ready for agent:** no
+- **Ready for agent:** yes
 - **Depends on:** 03-dpo-trainer-soft-launch
 
-## Goal
+## Parent
 
-Compare Base, SFT, and SFT + DPO using the same evaluation set and report whether DPO adds measurable value.
+`.scratch/phase1-dpo-comparison/PRD.md`
 
-## Scope
+## What to build
 
-**In scope:** final-answer accuracy, confidence intervals, response length, failure examples, summary table.
-
-**Out of scope:** finance-domain evaluation and GRPO.
+Run the final Phase 1 comparison between Base, SFT-best, and SFT+DPO on the
+same exact-answer evaluation surface, then write the decision report that says
+whether DPO adds value over SFT.
 
 ## Acceptance criteria
 
-- Comparison uses the same held-out prompts for all models.
-- Report includes Base, SFT, and SFT + DPO metrics.
-- Bootstrap confidence intervals are included for each metric.
-- Report includes at least 10 qualitative examples where SFT and DPO differ.
-- Final conclusion states whether DPO improved, harmed, or was indistinguishable from SFT.
+- [ ] Evaluation uses the same held-out prompts, seed, and sample counts for
+      all compared checkpoints.
+- [ ] Report includes Base, SFT-best, and SFT+DPO final-answer accuracy for
+      GSM8K and MATH.
+- [ ] Report includes bootstrap confidence intervals, response-length
+      statistics, parse-success rates, and cost ledger rows.
+- [ ] Report includes at least 10 qualitative examples where SFT and DPO differ.
+- [ ] Final conclusion states whether DPO improved, harmed, or was
+      statistically indistinguishable from SFT.
+- [ ] Raw eval output and summary report are stored under `results/evals/`.
 
-## Notes / open questions
+## Verification
 
-- This issue is the decision gate before moving to finance-domain distillation.
+- `python -m finpost.evals.eval_exact --checkpoints ... --sources gsm8k math ...`
+- `accuracy_summary.csv`, `cost_summary.json`, and qualitative examples exist
+  under the DPO comparison output directory.
+
+## Blocked by
+
+Requires a completed DPO checkpoint from issue 03.
