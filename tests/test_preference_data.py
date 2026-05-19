@@ -1,0 +1,116 @@
+"""Behavior tests for DPO preference-pair data loading and collation."""
+
+from __future__ import annotations
+
+import json
+
+from finpost.training.masking import IGNORE_INDEX
+
+
+class TinyTokenizer:
+    """Tokenizer test double: deterministic IDs without model-specific behavior."""
+
+    eos_token_id = 99
+    pad_token_id = 0
+
+    def __call__(self, text: str, *, add_special_tokens: bool = False) -> dict[str, list[int]]:
+        del add_special_tokens
+        return {"input_ids": [ord(ch) for ch in text]}
+
+
+def test_load_preference_pairs_reads_jsonl_and_preserves_metadata(tmp_path) -> None:
+    """The DPO dataset is plain JSONL so pair generation and training decouple."""
+    from finpost.training.preference_data import load_preference_pairs
+
+    path = tmp_path / "pairs.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "prompt": "1+1?",
+                "chosen": "2",
+                "rejected": "3",
+                "source": "gsm8k",
+                "prompt_id": "gsm8k-0",
+                "chosen_grade": {"correct": True},
+                "rejected_grade": {"correct": False},
+                "metadata": {"sample_ids": ["a", "b"]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    pairs = load_preference_pairs(path)
+
+    assert len(pairs) == 1
+    assert pairs[0].prompt == "1+1?"
+    assert pairs[0].chosen == "2"
+    assert pairs[0].rejected == "3"
+    assert pairs[0].source == "gsm8k"
+    assert pairs[0].metadata == {"sample_ids": ["a", "b"]}
+
+
+def test_dpo_collator_masks_prompt_and_padding_for_both_sides() -> None:
+    """Only response tokens should contribute to chosen/rejected logprobs."""
+    from finpost.training.dataset import serialize_prompt, serialize_response
+    from finpost.training.preference_data import DPOCollator, DPOPreferenceExample
+
+    tokenizer = TinyTokenizer()
+    prompt = "Q?"
+    chosen = "long"
+    rejected = "no"
+    collator = DPOCollator(tokenizer=tokenizer, max_seq_len=128)
+
+    batch = collator(
+        [
+            DPOPreferenceExample(
+                prompt=prompt,
+                chosen=chosen,
+                rejected=rejected,
+                source="gsm8k",
+                prompt_id="p0",
+            )
+        ]
+    )
+
+    prompt_len = len(serialize_prompt(prompt))
+    chosen_response_len = len(serialize_response(chosen))
+    rejected_response_len = len(serialize_response(rejected))
+
+    assert batch["chosen_labels"][0, :prompt_len].tolist() == [IGNORE_INDEX] * prompt_len
+    assert batch["rejected_labels"][0, :prompt_len].tolist() == [IGNORE_INDEX] * prompt_len
+    assert batch["chosen_labels"][0, prompt_len : prompt_len + chosen_response_len].tolist() == [
+        ord(ch) for ch in serialize_response(chosen)
+    ]
+    rejected_labels = batch["rejected_labels"][0, prompt_len : prompt_len + rejected_response_len]
+    assert rejected_labels.tolist() == [ord(ch) for ch in serialize_response(rejected)]
+
+    rejected_pad_start = prompt_len + rejected_response_len
+    assert batch["rejected_labels"][0, rejected_pad_start:].tolist() == [IGNORE_INDEX] * (
+        batch["rejected_labels"].shape[1] - rejected_pad_start
+    )
+
+
+def test_dpo_collator_rejects_truncated_rows_without_response_labels() -> None:
+    """Bad max_seq_len settings should fail before a GPU run starts."""
+    from finpost.training.dataset import serialize_prompt
+    from finpost.training.preference_data import DPOCollator, DPOPreferenceExample
+
+    prompt = "this prompt is too long"
+    collator = DPOCollator(tokenizer=TinyTokenizer(), max_seq_len=len(serialize_prompt(prompt)))
+
+    try:
+        collator(
+            [
+                DPOPreferenceExample(
+                    prompt=prompt,
+                    chosen="correct",
+                    rejected="wrong",
+                    source="math",
+                )
+            ]
+        )
+    except ValueError as exc:
+        assert "no response tokens" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected no response tokens to raise")

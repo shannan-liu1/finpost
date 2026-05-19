@@ -243,8 +243,8 @@
   <section>
     <h2>Target Commands</h2>
     <p>
-      These commands are implementation targets. They become runnable after the
-      issues under <code>.scratch/phase1-dpo-comparison/issues/</code> land.
+      These commands are the concrete RunPod operator path after the combined
+      SFT checkpoint has been converted to Hugging Face format.
     </p>
     <h3>Build preference pairs</h3>
     <pre><code>python scripts/build_dpo_pairs.py \
@@ -253,6 +253,7 @@
   --heldout-train-n 2000 \
   --samples-per-prompt 8 \
   --temperature 0.8 \
+  --max-new-tokens 768 \
   --seed 42 \
   --out-dir results/dpo_pairs/qwen_sft_best_k8_v1</code></pre>
 

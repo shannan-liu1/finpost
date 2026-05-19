@@ -1,6 +1,6 @@
 # 03 - Add DPO trainer and soft-launch path
 
-- **Status:** Not Started
+- **Status:** Implemented; RunPod canary pending real SFT checkpoint
 - **Ready for agent:** yes
 - **Depends on:** 02-dpo-loss-and-parity
 
@@ -17,11 +17,11 @@ DPO study.
 
 ## Acceptance criteria
 
-- [ ] `src/finpost/training/dpo_train.py` loads a DPO config and launches
+- [x] `src/finpost/training/dpo_train.py` loads a DPO config and launches
       training from a policy checkpoint plus frozen reference checkpoint.
-- [ ] `experiments/dpo/qwen_dpo_baseline.yaml` defines model, pair data,
+- [x] `experiments/dpo/qwen_dpo_baseline.yaml` defines model, pair data,
       training, beta, packing, logging, and checkpointing settings.
-- [ ] Checkpoints include policy weights, optimizer state, scheduler state,
+- [x] Checkpoints include policy weights, optimizer state, scheduler state,
       global step, config, pair manifest id, and source SFT checkpoint id.
 - [ ] Resume from a DPO checkpoint reproduces continuation loss within
       tolerance on a fixed fixture.
@@ -31,7 +31,7 @@ DPO study.
 
 ## Verification
 
-- `.\.venv\Scripts\python.exe -m pytest tests/test_dpo_train_cli.py tests/test_checkpoint.py`
+- `uv --cache-dir .uv-cache run python -m pytest tests/test_dpo_train_cli.py`
 - RunPod canary command recorded in `docs/dpo-study.html`.
 
 ## Blocked by

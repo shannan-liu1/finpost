@@ -455,15 +455,19 @@ Before this gate:
 - Preferably Gate 7 has evaluated it.
 - Q-B policy for all-correct and all-incorrect prompt groups is recorded in `.scratch/phase1-training-runbook/issues/05-decision-gates-and-signoff.md`.
 
-Expected command once implemented:
+Expected command:
 
 ```bash
 python scripts/build_dpo_pairs.py \
-  --checkpoint results/checkpoints/<sft-run>/best.pt \
-  --output data/processed/phase1_dpo_pairs.jsonl \
+  --sft-checkpoint results/checkpoints/qwen-combined-2000s-a40-step2000-hf \
+  --sources gsm8k math \
+  --heldout-train-n 2000 \
   --samples-per-prompt 8 \
   --temperature 0.8 \
-  --seed <seed>
+  --max-new-tokens 768 \
+  --seed 42 \
+  --out-dir results/dpo_pairs/qwen_combined_2000s_a40_k8_v1 \
+  --device cuda
 ```
 
 Pass criteria:
@@ -518,19 +522,22 @@ Purpose: verify the DPO trainer runs end to end, then produce the first Qwen SFT
 
 DPO is more memory-sensitive than SFT because it compares a trainable policy model against a frozen reference model. On Colab, keep the first DPO run small: short sequence length, batch size 1, frequent checkpoints, and a clear fallback plan to precompute reference log-probabilities if holding both models in memory becomes the blocker.
 
-Expected soft-launch command once implemented:
+Expected soft-launch command:
 
 ```bash
 WANDB_MODE=offline \
 python -m finpost.training.dpo_train \
-  --config experiments/dpo_tiny_gpt2.yaml \
-  --max-steps 20
+  --config experiments/dpo/qwen_dpo_baseline.yaml \
+  --device cuda \
+  --max-steps 50
 ```
 
-Expected Qwen command once implemented:
+Expected Qwen command:
 
 ```bash
-python -m finpost.training.dpo_train --config experiments/dpo_baseline.yaml
+python -m finpost.training.dpo_train \
+  --config experiments/dpo/qwen_dpo_baseline.yaml \
+  --device cuda
 ```
 
 Pass criteria:

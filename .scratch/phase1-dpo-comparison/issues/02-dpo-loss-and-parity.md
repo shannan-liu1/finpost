@@ -1,6 +1,6 @@
 # 02 - Implement DPO loss and reference parity
 
-- **Status:** Not Started
+- **Status:** Implemented; TRL numerical reference comparison still optional
 - **Ready for agent:** yes
 - **Depends on:** 01-build-preference-pairs
 
@@ -16,21 +16,20 @@ reference-model handling. TRL may be used only as a numerical parity reference.
 
 ## Acceptance criteria
 
-- [ ] `src/finpost/training/dpo.py` exposes a small tested interface for
+- [x] `src/finpost/training/dpo.py` exposes a small tested interface for
       computing per-example and mean DPO loss.
-- [ ] The implementation computes sequence log-probabilities only over response
+- [x] The implementation computes sequence log-probabilities only over response
       tokens, not prompt or padding tokens.
-- [ ] The reference model is frozen, uses `torch.no_grad()` where appropriate,
+- [x] The reference model is frozen, uses `torch.no_grad()` where appropriate,
       and never receives gradients.
-- [ ] Swapping chosen and rejected responses changes the loss direction.
-- [ ] Beta changes the loss as expected and is serialized in configs.
+- [x] Swapping chosen and rejected responses changes the loss direction.
+- [x] Beta changes the loss as expected and is serialized in configs.
 - [ ] Local loss matches a reference calculation within `1e-5` on a fixed tiny
       batch.
 
 ## Verification
 
-- `.\.venv\Scripts\python.exe -m pytest tests/test_dpo.py`
-- `.\.venv\Scripts\python.exe -m pytest tests/test_loss_dtype.py`
+- `uv --cache-dir .uv-cache run python -m pytest tests/test_dpo.py tests/test_preference_data.py`
 
 ## Blocked by
 
