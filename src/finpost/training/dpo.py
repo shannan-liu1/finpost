@@ -108,6 +108,55 @@ def dpo_loss_from_logits(
     ref_chosen_logps, _ = sequence_log_probs(ref_chosen_logits, chosen_labels)
     ref_rejected_logps, _ = sequence_log_probs(ref_rejected_logits, rejected_labels)
 
+    return dpo_loss_from_logps(
+        policy_chosen_logps=policy_chosen_logps,
+        policy_rejected_logps=policy_rejected_logps,
+        ref_chosen_logps=ref_chosen_logps,
+        ref_rejected_logps=ref_rejected_logps,
+        chosen_counts=chosen_counts,
+        rejected_counts=rejected_counts,
+        beta=beta,
+    )
+
+
+def dpo_loss_from_policy_logits(
+    *,
+    policy_chosen_logits: torch.Tensor,
+    policy_rejected_logits: torch.Tensor,
+    chosen_labels: torch.Tensor,
+    rejected_labels: torch.Tensor,
+    ref_chosen_logps: torch.Tensor,
+    ref_rejected_logps: torch.Tensor,
+    beta: float,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """DPO loss when reference sequence log-probs were precomputed."""
+    policy_chosen_logps, chosen_counts = sequence_log_probs(policy_chosen_logits, chosen_labels)
+    policy_rejected_logps, rejected_counts = sequence_log_probs(
+        policy_rejected_logits,
+        rejected_labels,
+    )
+    return dpo_loss_from_logps(
+        policy_chosen_logps=policy_chosen_logps,
+        policy_rejected_logps=policy_rejected_logps,
+        ref_chosen_logps=ref_chosen_logps,
+        ref_rejected_logps=ref_rejected_logps,
+        chosen_counts=chosen_counts,
+        rejected_counts=rejected_counts,
+        beta=beta,
+    )
+
+
+def dpo_loss_from_logps(
+    *,
+    policy_chosen_logps: torch.Tensor,
+    policy_rejected_logps: torch.Tensor,
+    ref_chosen_logps: torch.Tensor,
+    ref_rejected_logps: torch.Tensor,
+    chosen_counts: torch.Tensor,
+    rejected_counts: torch.Tensor,
+    beta: float,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """DPO loss from already-summed sequence log-probabilities."""
     loss, metrics = compute_dpo_loss(
         policy_chosen_logps=policy_chosen_logps,
         policy_rejected_logps=policy_rejected_logps,

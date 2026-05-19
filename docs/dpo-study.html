@@ -568,12 +568,15 @@
       40-50%.
     </p>
     <p>
-      Implementation lives in <code>finpost.training.dpo_train</code>: add a
-      one-time precompute pass at trainer init that iterates the pair
-      dataset under <code>torch.inference_mode()</code>, stores per-pair
-      log-probs as a parquet or torch tensor, then frees the reference
-      model. The training loop reads precomputed reference values instead of
-      running the reference forward.
+      Implementation lives in <code>finpost.training.dpo_train</code>: set
+      <code>data.precompute_reference_logps: true</code> and
+      <code>data.reference_logps_cache_path</code> in the DPO config. Trainer
+      setup iterates the tokenized pair dataset once under
+      <code>torch.no_grad()</code>, stores per-pair log-probs as a torch
+      cache keyed to the pair file, tokenizer, reference checkpoint, dtype,
+      and sequence length, then frees the reference model. The training loop
+      reads precomputed reference values instead of running the reference
+      forward.
     </p>
 
     <h3>4. Skip the base eval inside the DPO notebook</h3>
@@ -646,13 +649,12 @@
     </table>
 
     <div class="callout">
-      <strong>Why none of these were implemented for Phase 1</strong>
-      Phase 1 is a one-shot study, not a sweep. Total end-to-end cost is
-      under one dollar per run, and the implementation work to integrate
-      vLLM and refactor the trainer would exceed the time saved across all
-      Phase 1 runs combined. The right point to invest is when Phase 2
-      starts running grids over beta, learning rate, or pair-generation
-      seed - that is when these multipliers actually pay back.
+      <strong>Current implementation stance</strong>
+      Reference log-prob precompute is now implemented because it removes a
+      full frozen-model forward from every DPO training step without changing
+      the objective. The larger rollout-generation optimizations, vLLM
+      integration, and base-eval reuse are still deferred until the study is
+      running repeated grids where their implementation cost pays back.
     </div>
   </section>
 

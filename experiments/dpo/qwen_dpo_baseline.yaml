@@ -8,6 +8,8 @@ data:
   manifest_path: results/dpo_pairs/qwen_combined_2000s_a40_k8_v1/manifest.json
   tokenized_cache_path: results/dpo_pairs/qwen_combined_2000s_a40_k8_v1/pairs.tokenized.pt
   rebuild_tokenized_cache: false
+  precompute_reference_logps: true
+  reference_logps_cache_path: results/dpo_pairs/qwen_combined_2000s_a40_k8_v1/pairs.reference-logps.pt
   seed: 42
 dpo:
   beta: 0.1

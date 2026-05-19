@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import torch
+
 from finpost.training.masking import IGNORE_INDEX
 
 
@@ -159,3 +161,29 @@ def test_tokenized_preference_dataset_cache_avoids_retokenizing(tmp_path) -> Non
     assert cache_path.exists()
     assert len(first) == len(second) == 1
     assert first[0].chosen_input_ids.tolist() == second[0].chosen_input_ids.tolist()
+
+
+def test_dpo_collator_emits_cached_reference_logps() -> None:
+    """Cached reference scores should move through collation with the batch."""
+    from finpost.training.preference_data import (
+        DPOCollator,
+        TokenizedDPOPreferenceExample,
+    )
+
+    example = TokenizedDPOPreferenceExample(
+        chosen_input_ids=torch.tensor([1, 2, 3]),
+        chosen_attention_mask=torch.ones(3, dtype=torch.long),
+        chosen_labels=torch.tensor([IGNORE_INDEX, 2, 3]),
+        rejected_input_ids=torch.tensor([1, 2, 4]),
+        rejected_attention_mask=torch.ones(3, dtype=torch.long),
+        rejected_labels=torch.tensor([IGNORE_INDEX, 2, 4]),
+        source="gsm8k",
+        prompt_id="p0",
+        ref_chosen_logp=-1.25,
+        ref_rejected_logp=-2.5,
+    )
+
+    batch = DPOCollator(tokenizer=None, max_seq_len=8, pad_token_id=0)([example])
+
+    assert batch["ref_chosen_logps"].tolist() == [-1.25]
+    assert batch["ref_rejected_logps"].tolist() == [-2.5]

@@ -7,6 +7,7 @@ import os
 import random
 import shutil
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import IO, Any, NamedTuple
 
@@ -22,11 +23,16 @@ from finpost.safety import safe_load_model, safe_load_tokenizer
 from finpost.training._guards import check_finite_loss
 from finpost.training.checkpoint import apply_retention_policy
 from finpost.training.config import CheckpointConfig, DType, LoggingConfig, PackingConfig
-from finpost.training.dpo import dpo_loss_from_logits
+from finpost.training.dpo import (
+    dpo_loss_from_logits,
+    dpo_loss_from_policy_logits,
+    sequence_log_probs,
+)
 from finpost.training.masking import IGNORE_INDEX
 from finpost.training.optim import build_lr_scheduler, build_optimizer
 from finpost.training.preference_data import (
     DPOCollator,
+    TokenizedDPOPreferenceDataset,
     load_or_build_tokenized_preference_dataset,
 )
 
@@ -64,6 +70,14 @@ class DPODataConfig(BaseModel):
     rebuild_tokenized_cache: bool = Field(
         default=False,
         description="Force rebuilding tokenized_cache_path even if metadata matches.",
+    )
+    precompute_reference_logps: bool = Field(
+        default=False,
+        description="Cache frozen-reference sequence log-probs and skip reference forwards.",
+    )
+    reference_logps_cache_path: Path | None = Field(
+        default=None,
+        description="Optional torch cache for precomputed reference sequence log-probs.",
     )
     seed: int = Field(default=42, ge=0, description="Seed for shuffling and training RNGs.")
 
@@ -224,6 +238,184 @@ def _metric_to_float(value: Any) -> float:
     return float(value)
 
 
+def _path_fingerprint(path: Path) -> dict[str, Any]:
+    path = Path(path)
+    stat = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "mtime_ns": stat.st_mtime_ns,
+        "size": stat.st_size,
+    }
+
+
+def _checkpoint_fingerprint(path: Path) -> dict[str, Any]:
+    path = Path(path)
+    if path.is_file():
+        return _path_fingerprint(path)
+
+    candidates = [
+        path / "model.safetensors",
+        path / "adapter_model.safetensors",
+        path / "pytorch_model.bin",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return _path_fingerprint(candidate)
+    return _path_fingerprint(path)
+
+
+def _reference_logps_metadata(config: DPOConfig, tokenizer: Any) -> dict[str, Any]:
+    tokenizer_id = getattr(tokenizer, "name_or_path", None) or tokenizer.__class__.__name__
+    return {
+        "version": 1,
+        "pairs": _path_fingerprint(config.data.pairs_path),
+        "reference_checkpoint": _checkpoint_fingerprint(config.model.reference_checkpoint),
+        "tokenizer": str(tokenizer_id),
+        "max_seq_len": config.packing.max_seq_len,
+        "dtype": config.model.dtype,
+    }
+
+
+def _attach_reference_logps(
+    dataset: TokenizedDPOPreferenceDataset,
+    *,
+    chosen_logps: list[float],
+    rejected_logps: list[float],
+) -> TokenizedDPOPreferenceDataset:
+    if len(chosen_logps) != len(dataset) or len(rejected_logps) != len(dataset):
+        raise ValueError("reference log-prob cache length does not match DPO dataset")
+    examples = [
+        replace(
+            example,
+            ref_chosen_logp=float(chosen),
+            ref_rejected_logp=float(rejected),
+        )
+        for example, chosen, rejected in zip(
+            dataset.examples,
+            chosen_logps,
+            rejected_logps,
+            strict=True,
+        )
+    ]
+    return TokenizedDPOPreferenceDataset(examples)
+
+
+def _load_reference_logps_cache(
+    *,
+    dataset: TokenizedDPOPreferenceDataset,
+    cache_path: Path,
+    metadata: dict[str, Any],
+) -> TokenizedDPOPreferenceDataset | None:
+    if not cache_path.exists():
+        return None
+    payload = torch.load(cache_path, weights_only=False)
+    if payload.get("metadata") != metadata:
+        return None
+    return _attach_reference_logps(
+        dataset,
+        chosen_logps=payload["chosen_logps"],
+        rejected_logps=payload["rejected_logps"],
+    )
+
+
+def _compute_reference_logps(
+    *,
+    dataset: TokenizedDPOPreferenceDataset,
+    reference: torch.nn.Module,
+    device: torch.device,
+    max_seq_len: int,
+    pad_token_id: int,
+    batch_size: int,
+) -> tuple[list[float], list[float]]:
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=DPOCollator(
+            tokenizer=None,
+            max_seq_len=max_seq_len,
+            pad_token_id=pad_token_id,
+        ),
+    )
+    chosen_logps: list[float] = []
+    rejected_logps: list[float] = []
+    reference.eval()
+    with torch.no_grad():
+        for batch in loader:
+            chosen_input_ids = batch["chosen_input_ids"].to(device, non_blocking=True)
+            chosen_attention_mask = batch["chosen_attention_mask"].to(
+                device,
+                non_blocking=True,
+            )
+            chosen_labels = batch["chosen_labels"].to(device, non_blocking=True)
+            rejected_input_ids = batch["rejected_input_ids"].to(device, non_blocking=True)
+            rejected_attention_mask = batch["rejected_attention_mask"].to(
+                device,
+                non_blocking=True,
+            )
+            rejected_labels = batch["rejected_labels"].to(device, non_blocking=True)
+
+            input_ids = torch.cat([chosen_input_ids, rejected_input_ids], dim=0)
+            attention_mask = torch.cat([chosen_attention_mask, rejected_attention_mask], dim=0)
+            pair_count = chosen_input_ids.size(0)
+            logits = reference(input_ids=input_ids, attention_mask=attention_mask).logits
+            chosen_logits, rejected_logits = logits.split(pair_count, dim=0)
+
+            chosen, _ = sequence_log_probs(chosen_logits, chosen_labels)
+            rejected, _ = sequence_log_probs(rejected_logits, rejected_labels)
+            chosen_logps.extend(chosen.detach().float().cpu().tolist())
+            rejected_logps.extend(rejected.detach().float().cpu().tolist())
+
+    return chosen_logps, rejected_logps
+
+
+def load_or_build_reference_logps_dataset(
+    *,
+    dataset: TokenizedDPOPreferenceDataset,
+    reference: torch.nn.Module,
+    config: DPOConfig,
+    tokenizer: Any,
+    device: torch.device,
+) -> TokenizedDPOPreferenceDataset:
+    """Attach cached frozen-reference sequence log-probs to a tokenized DPO dataset."""
+    metadata = _reference_logps_metadata(config, tokenizer)
+    cache_path = config.data.reference_logps_cache_path
+    if cache_path is None:
+        cache_path = config.data.pairs_path.with_suffix(".reference-logps.pt")
+    cache_path = Path(cache_path)
+
+    cached = _load_reference_logps_cache(
+        dataset=dataset,
+        cache_path=cache_path,
+        metadata=metadata,
+    )
+    if cached is not None:
+        return cached
+
+    chosen_logps, rejected_logps = _compute_reference_logps(
+        dataset=dataset,
+        reference=reference,
+        device=device,
+        max_seq_len=config.packing.max_seq_len,
+        pad_token_id=int(tokenizer.pad_token_id),
+        batch_size=config.training.per_device_pair_batch_size,
+    )
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "metadata": metadata,
+            "chosen_logps": chosen_logps,
+            "rejected_logps": rejected_logps,
+        },
+        cache_path,
+    )
+    return _attach_reference_logps(
+        dataset,
+        chosen_logps=chosen_logps,
+        rejected_logps=rejected_logps,
+    )
+
+
 class DPOTrainer:
     """Minimal full fine-tune DPO loop over offline preference pairs."""
 
@@ -274,6 +466,18 @@ class DPOTrainer:
             cache_path=self.config.data.tokenized_cache_path,
             rebuild_cache=self.config.data.rebuild_tokenized_cache,
         )
+        if self.config.data.precompute_reference_logps:
+            dataset = load_or_build_reference_logps_dataset(
+                dataset=dataset,
+                reference=self.reference,
+                config=self.config,
+                tokenizer=self.tokenizer,
+                device=self.device,
+            )
+            self.reference = None
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
+
         generator = torch.Generator()
         generator.manual_seed(self.config.data.seed)
         num_workers = self.config.training.dataloader_num_workers
@@ -405,7 +609,7 @@ class DPOTrainer:
                 self._save_checkpoint()
 
     def _forward_loss(self, batch: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
-        assert self.policy is not None and self.reference is not None
+        assert self.policy is not None
         chosen_input_ids = batch["chosen_input_ids"].to(self.device, non_blocking=True)
         chosen_attention_mask = batch["chosen_attention_mask"].to(
             self.device,
@@ -430,6 +634,20 @@ class DPOTrainer:
         policy_chosen_logits, policy_rejected_logits = policy_logits.split(pair_count, dim=0)
         del policy_logits
 
+        if "ref_chosen_logps" in batch and "ref_rejected_logps" in batch:
+            ref_chosen_logps = batch["ref_chosen_logps"].to(self.device, non_blocking=True)
+            ref_rejected_logps = batch["ref_rejected_logps"].to(self.device, non_blocking=True)
+            return dpo_loss_from_policy_logits(
+                policy_chosen_logits=policy_chosen_logits,
+                policy_rejected_logits=policy_rejected_logits,
+                chosen_labels=chosen_labels,
+                rejected_labels=rejected_labels,
+                ref_chosen_logps=ref_chosen_logps,
+                ref_rejected_logps=ref_rejected_logps,
+                beta=self.config.dpo.beta,
+            )
+
+        assert self.reference is not None
         with torch.no_grad():
             ref_logits = self.reference(
                 input_ids=input_ids,
@@ -546,6 +764,8 @@ def print_effective_config(
         f"  dtype:                   {config.model.dtype}",
         f"  pairs_path:              {config.data.pairs_path}",
         f"  tokenized_cache_path:    {config.data.tokenized_cache_path}",
+        f"  precompute_ref_logps:    {config.data.precompute_reference_logps}",
+        f"  ref_logps_cache_path:    {config.data.reference_logps_cache_path}",
         f"  beta:                    {config.dpo.beta}",
         f"  max_steps:               {config.training.max_steps}",
         f"  warmup_steps:            {config.training.warmup_steps}",

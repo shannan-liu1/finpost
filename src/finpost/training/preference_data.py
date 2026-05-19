@@ -45,6 +45,8 @@ class TokenizedDPOPreferenceExample:
     rejected_labels: torch.Tensor
     source: Source
     prompt_id: str | None = None
+    ref_chosen_logp: float | None = None
+    ref_rejected_logp: float | None = None
 
 
 def load_preference_pairs(path: str | Path) -> list[DPOPreferenceExample]:
@@ -203,6 +205,8 @@ def _serialize_tokenized(
             "rejected_labels": ex.rejected_labels,
             "source": ex.source,
             "prompt_id": ex.prompt_id,
+            "ref_chosen_logp": ex.ref_chosen_logp,
+            "ref_rejected_logp": ex.ref_rejected_logp,
         }
         for ex in examples
     ]
@@ -221,6 +225,8 @@ def _deserialize_tokenized(
             rejected_labels=row["rejected_labels"],
             source=row["source"],
             prompt_id=row.get("prompt_id"),
+            ref_chosen_logp=row.get("ref_chosen_logp"),
+            ref_rejected_logp=row.get("ref_rejected_logp"),
         )
         for row in rows
     ]
@@ -316,7 +322,7 @@ class DPOCollator:
         )
         chosen_batch = self._pad(chosen, width=width)
         rejected_batch = self._pad(rejected, width=width)
-        return {
+        batch: dict[str, Any] = {
             "chosen_input_ids": chosen_batch["input_ids"],
             "chosen_attention_mask": chosen_batch["attention_mask"],
             "chosen_labels": chosen_batch["labels"],
@@ -326,6 +332,22 @@ class DPOCollator:
             "prompt_ids": [ex.prompt_id for ex in tokenized],
             "sources": [ex.source for ex in tokenized],
         }
+        has_ref_logps = [
+            ex.ref_chosen_logp is not None and ex.ref_rejected_logp is not None
+            for ex in tokenized
+        ]
+        if any(has_ref_logps):
+            if not all(has_ref_logps):
+                raise ValueError("DPO batch mixes examples with and without reference logps")
+            batch["ref_chosen_logps"] = torch.tensor(
+                [float(ex.ref_chosen_logp) for ex in tokenized],
+                dtype=torch.float32,
+            )
+            batch["ref_rejected_logps"] = torch.tensor(
+                [float(ex.ref_rejected_logp) for ex in tokenized],
+                dtype=torch.float32,
+            )
+        return batch
 
     def _normalize(
         self,

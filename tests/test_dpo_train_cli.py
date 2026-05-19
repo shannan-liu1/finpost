@@ -159,3 +159,54 @@ def test_forward_loss_batches_chosen_and_rejected_into_two_model_calls(tmp_path)
     assert loss.requires_grad
     assert trainer.policy.calls == 1
     assert trainer.reference.calls == 1
+
+
+def test_forward_loss_uses_precomputed_reference_logps_without_reference_call(tmp_path) -> None:
+    """With cached reference logps, the DPO hot path should only run the policy."""
+    import types
+
+    import torch
+
+    from finpost.training.dpo_train import DPOConfig, DPOTrainer
+    from finpost.training.masking import IGNORE_INDEX
+
+    class CountingLM(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+            self.weight = torch.nn.Parameter(torch.tensor(0.0))
+
+        def forward(self, *, input_ids, attention_mask):
+            del attention_mask
+            self.calls += 1
+            logits = torch.zeros(
+                (input_ids.shape[0], input_ids.shape[1], 8),
+                dtype=torch.float32,
+            )
+            logits[:, 1, 2] = 2.0
+            logits[:, 2, 3] = 2.0
+            return types.SimpleNamespace(logits=logits + self.weight)
+
+    raw = _raw_config(tmp_path)
+    raw["data"]["precompute_reference_logps"] = True
+    raw["data"]["reference_logps_cache_path"] = str(tmp_path / "ref-logps.pt")
+    config = DPOConfig.model_validate(raw)
+    trainer = DPOTrainer(config, device="cpu")
+    trainer.policy = CountingLM()
+    trainer.reference = None
+    batch = {
+        "chosen_input_ids": torch.tensor([[1, 2, 3]]),
+        "chosen_attention_mask": torch.ones((1, 3), dtype=torch.long),
+        "chosen_labels": torch.tensor([[IGNORE_INDEX, 2, 3]], dtype=torch.long),
+        "rejected_input_ids": torch.tensor([[1, 2, 4]]),
+        "rejected_attention_mask": torch.ones((1, 3), dtype=torch.long),
+        "rejected_labels": torch.tensor([[IGNORE_INDEX, 2, 4]], dtype=torch.long),
+        "ref_chosen_logps": torch.tensor([-1.0], dtype=torch.float32),
+        "ref_rejected_logps": torch.tensor([-2.0], dtype=torch.float32),
+    }
+
+    loss, metrics = trainer._forward_loss(batch)
+
+    assert loss.requires_grad
+    assert trainer.policy.calls == 1
+    assert metrics["reference_margin"] == torch.tensor(1.0)
