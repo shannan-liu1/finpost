@@ -202,6 +202,18 @@ Build:
 - corrupt-answer tests
 - topic/template summaries
 
+Current safe implementation:
+
+- `src/finpost/data/finchain.py` loads local JSONL exports only.
+- It does not execute FinChain's upstream Python templates automatically.
+- Set `FINPOST_FINCHAIN_TRAIN_JSONL`, `FINPOST_FINCHAIN_VALIDATION_JSONL`, or
+  `FINPOST_FINCHAIN_TEST_JSONL` to point at an audited local export, or place
+  files under `data/finchain/{split}.jsonl`.
+- `src/finpost/evals/finchain_metrics.py` provides the first deterministic
+  verifier layer: parseability plus final-answer correctness. Full ChainEval
+  step alignment remains a later layer because it needs heavier semantic
+  scoring dependencies and a clear dependency/security decision.
+
 Core checks:
 
 - gold answers verify

@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # Tiny type alias for the ``source`` field. Used in the model below
 # and re-exportable for callers that want to refer to the allowed
 # values without restating the literal.
-Source = Literal["gsm8k", "math"]
+Source = Literal["gsm8k", "math", "finchain"]
 
 
 class Example(BaseModel):
@@ -74,4 +74,16 @@ class Example(BaseModel):
     category: str | None = Field(
         default=None,
         description="MATH subject category (e.g. 'algebra'); None for GSM8K.",
+    )
+    domain: str | None = Field(
+        default=None,
+        description="FinChain financial domain; None for non-FinChain sources.",
+    )
+    topic: str | None = Field(
+        default=None,
+        description="FinChain topic; None for non-FinChain sources.",
+    )
+    subtopic: str | None = Field(
+        default=None,
+        description="FinChain subtopic/template label; None when unavailable.",
     )

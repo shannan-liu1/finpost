@@ -8,10 +8,15 @@ extract final answers, and scoring against gold standard answers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Callable
 
+from finpost.data.finchain import (
+    load_finchain,
+    score_finchain_answer,
+    try_parse_finchain_final_answer,
+)
 from finpost.data.gsm8k import load_gsm8k
 from finpost.data.math_dataset import load_math, try_parse_math_final_answer
 from finpost.data.schema import Example
@@ -113,7 +118,7 @@ def _fix_a_slash_b(string: str) -> str:
     try:
         a = int(a)
         b = int(b)
-        assert string == "{}/{}".format(a, b)
+        assert string == f"{a}/{b}"
         new_string = "\\frac{" + str(a) + "}{" + str(b) + "}"
         return new_string
     except Exception:
@@ -436,6 +441,13 @@ def score_math(predicted: str | None, gold: str) -> bool:
 # Each entry's ``load_examples`` is wrapped as a lambda (thunk) so the
 # registry import itself does not trigger dataset downloads.
 REGISTRY: dict[str, EvalSource] = {
+    "finchain": EvalSource(
+        name="finchain",
+        load_examples=lambda: load_finchain("test"),
+        extract_answer=try_parse_finchain_final_answer,
+        score=score_finchain_answer,
+        default_max_new_tokens=768,
+    ),
     "gsm8k": EvalSource(
         name="gsm8k",
         load_examples=lambda: load_gsm8k("test"),

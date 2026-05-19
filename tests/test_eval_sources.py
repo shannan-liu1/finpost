@@ -17,9 +17,9 @@ from finpost.evals.sources import REGISTRY, _decimal_equal
 # =============================================================================
 
 
-def test_registry_contains_gsm8k_and_math() -> None:
-    """The REGISTRY dict has exactly the two Phase 1 sources."""
-    assert sorted(REGISTRY.keys()) == ["gsm8k", "math"]
+def test_registry_contains_gsm8k_math_and_finchain() -> None:
+    """The REGISTRY dict exposes the current evaluation sources."""
+    assert sorted(REGISTRY.keys()) == ["finchain", "gsm8k", "math"]
 
 
 def test_eval_source_is_frozen() -> None:
@@ -77,7 +77,7 @@ def test_gsm8k_strips_commas() -> None:
 
 
 def test_gsm8k_composite_normalization() -> None:
-    """The spec example: $1,234. should normalize to 1234 (strip $, then trailing ., then commas)."""
+    """The spec example: $1,234. should normalize to 1234."""
     result = REGISTRY["gsm8k"].extract_answer("answer is\n#### $1,234.")
     assert result == "1234"
 
@@ -251,6 +251,19 @@ def test_math_score_none_is_always_wrong() -> None:
     """Predicted None (parse failure) is always incorrect."""
     math = REGISTRY["math"]
     assert math.score(None, "42") is False
+
+
+def test_finchain_extracts_final_answer_marker() -> None:
+    """FinChain uses answer markers in model generations for exact scoring."""
+    finchain = REGISTRY["finchain"]
+    assert finchain.extract_answer("Step 1: work.\nFinal Answer: $1,210.00") == "1210.00"
+
+
+def test_finchain_score_numeric_equivalence() -> None:
+    """FinChain final-answer scoring should tolerate numeric formatting."""
+    finchain = REGISTRY["finchain"]
+    assert finchain.score("1,210.0", "1210.00") is True
+    assert finchain.score("1209", "1210.00") is False
 
 
 # =============================================================================
