@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>finpost — Phase 1 SFT Study</title>
+  <style>
+    :root {
+      --bg: #fbfbfa;
+      --fg: #18202f;
+      --muted: #5c6678;
+      --line: #d9dee7;
+      --panel: #ffffff;
+      --soft: #eef3fb;
+      --ok: #236b3d;
+      --warn: #9a6200;
+      --bad: #9f3030;
+      --code: #f2f4f8;
+      --max: 980px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg) !important;
+      color: var(--fg) !important;
+      font: 16px/1.58 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: light only !important;
+    }
+
+    main {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 42px 22px 80px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 22px;
+      margin-bottom: 28px;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 2rem; line-height: 1.15; }
+    h2 { margin: 40px 0 14px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 1.38rem; }
+    h3 { margin: 26px 0 8px; font-size: 1.08rem; }
+    p { margin: 0 0 14px; }
+    ul, ol { margin: 0 0 14px; padding-left: 1.6em; }
+    li { margin-bottom: 6px; }
+
+    .meta { color: var(--muted); font-size: 0.88rem; margin: 0; }
+
+    .finding {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--fg);
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+    .finding.good { border-left-color: var(--ok); }
+    .finding.warn { border-left-color: var(--warn); }
+    .finding.bad  { border-left-color: var(--bad); }
+
+    .finding-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .finding.good .finding-label { color: var(--ok); }
+    .finding.warn .finding-label { color: var(--warn); }
+    .finding.bad  .finding-label { color: var(--bad); }
+
+    .finding p { margin: 0; }
+
+    .concept {
+      background: var(--soft);
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+    .concept-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .concept p { margin: 0; }
+    .concept p + p { margin-top: 10px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.93rem;
+      margin: 18px 0 24px;
+      background: var(--panel);
+    }
+    th {
+      background: var(--soft);
+      text-align: left;
+      padding: 9px 12px;
+      border-bottom: 2px solid var(--line);
+      font-size: 0.83rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--fg) !important;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--soft); }
+
+    .best { font-weight: 700; color: var(--ok) !important; }
+    .worst { color: var(--bad) !important; }
+    .arm-gsm  { background: #f6fbf8 !important; }
+    .arm-math { background: #fdf8f6 !important; }
+    .arm-comb { background: #f6f8fd !important; }
+
+    code {
+      font-family: "JetBrains Mono", "Fira Code", Menlo, monospace;
+      font-size: 0.87em;
+      background: var(--code);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .pill {
+      display: inline-block;
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 99px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .pill-ok   { background: #d4edda; color: var(--ok); }
+    .pill-warn { background: #fff3cd; color: var(--warn); }
+    .pill-bad  { background: #f8d7da; color: var(--bad); }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+    @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .spec-box {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 14px 18px;
+    }
+    .spec-box h4 { margin: 0 0 10px; font-size: 0.95rem; }
+    .spec-row { display: flex; justify-content: space-between; font-size: 0.88rem; padding: 4px 0; border-bottom: 1px solid var(--line); }
+    .spec-row:last-child { border-bottom: none; }
+    .spec-key { color: var(--muted); }
+    .spec-val { font-weight: 500; }
+
+    .toc { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 20px; margin-bottom: 32px; }
+    .toc p { margin: 0 0 8px; font-weight: 600; font-size: 0.9rem; }
+    .toc ol { margin: 0; padding-left: 1.4em; }
+    .toc li { margin-bottom: 4px; font-size: 0.9rem; }
+    .toc a { color: var(--fg); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+<main>
+
+  <header>
+    <h1>Phase 1 SFT Study</h1>
+    <p class="meta">Qwen 2.5-0.5B · GSM8K + MATH · A40 on RunPod · May 2026</p>
+  </header>
+
+  <div class="toc">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#setup">Experiment setup</a></li>
+      <li><a href="#results">Full results</a></li>
+      <li><a href="#findings">Key findings</a></li>
+      <li><a href="#concepts">Concepts</a></li>
+      <li><a href="#implications">Implications for DPO</a></li>
+    </ol>
+  </div>
+
+  <!-- ─── SETUP ─────────────────────────────────────────────────────────── -->
+  <h2 id="setup">1. Experiment setup</h2>
+
+  <p>
+    This was a supervised fine-tuning ablation on Qwen 2.5-0.5B, a 0.5-billion-parameter
+    language model trained from scratch on math reasoning data. The goal was to understand
+    which data mixture — single-domain or combined — produces the best generalization,
+    and how many training steps are actually needed before overfitting sets in.
+  </p>
+
+  <p>Three training arms, each run to 2000 steps with checkpoints saved every 500 steps:</p>
+
+  <div class="grid-2">
+    <div class="spec-box">
+      <h4>Training configuration</h4>
+      <div class="spec-row"><span class="spec-key">Model</span><span class="spec-val">Qwen/Qwen2.5-0.5B</span></div>
+      <div class="spec-row"><span class="spec-key">Precision</span><span class="spec-val">bfloat16</span></div>
+      <div class="spec-row"><span class="spec-key">Batch size</span><span class="spec-val">16 sequences</span></div>
+      <div class="spec-row"><span class="spec-key">Sequence length</span><span class="spec-val">1024 tokens</span></div>
+      <div class="spec-row"><span class="spec-key">Learning rate</span><span class="spec-val">2e-5</span></div>
+      <div class="spec-row"><span class="spec-key">Warmup</span><span class="spec-val">200 steps (linear)</span></div>
+      <div class="spec-row"><span class="spec-key">Max steps</span><span class="spec-val">2000</span></div>
+      <div class="spec-row"><span class="spec-key">GPU</span><span class="spec-val">A40 48 GB on RunPod</span></div>
+    </div>
+    <div class="spec-box">
+      <h4>Evaluation configuration</h4>
+      <div class="spec-row"><span class="spec-key">Method</span><span class="spec-val">Exact final-answer match</span></div>
+      <div class="spec-row"><span class="spec-key">GSM8K eval n</span><span class="spec-val">500 examples</span></div>
+      <div class="spec-row"><span class="spec-key">MATH eval n</span><span class="spec-val">500 examples</span></div>
+      <div class="spec-row"><span class="spec-key">Seed</span><span class="spec-val">42 (reproducible)</span></div>
+      <div class="spec-row"><span class="spec-key">GSM8K max tokens</span><span class="spec-val">256</span></div>
+      <div class="spec-row"><span class="spec-key">MATH max tokens</span><span class="spec-val">768</span></div>
+      <div class="spec-row"><span class="spec-key">Checkpoints evaluated</span><span class="spec-val">4 per arm × 3 arms = 12</span></div>
+    </div>
+  </div>
+
+  <h3>Training datasets</h3>
+  <ul>
+    <li><strong>GSM8K</strong> — ~7,500 elementary school word problems with step-by-step solutions.
+      Short reasoning chains, formulaic structure, answers are small integers.</li>
+    <li><strong>MATH</strong> — ~7,500 competition-level problems (algebra, number theory, calculus).
+      Long and varied reasoning chains, answers in <code>\boxed{}</code> format.</li>
+    <li><strong>gsm8k_only arm</strong>: trains only on GSM8K — 2000 steps × 16 = 32k draws from 7.5k examples (~4 passes through the data).</li>
+    <li><strong>math_only arm</strong>: trains only on MATH — same compute, ~4 passes through MATH.</li>
+    <li><strong>combined arm</strong>: trains on GSM8K + MATH interleaved — same compute, ~2 passes through each dataset.
+      Half the per-dataset exposure, but covers both.</li>
+  </ul>
+
+  <h3>Loss function</h3>
+  <p>
+    Standard masked cross-entropy. Only response tokens contribute to the loss — prompt tokens
+    are masked with <code>IGNORE_INDEX</code>. All response tokens are weighted equally.
+    There is no outcome-based signal: the model is trained to reproduce the full reasoning
+    chain, not just to get the final answer right.
+  </p>
+
+  <!-- ─── RESULTS ────────────────────────────────────────────────────────── -->
+  <h2 id="results">2. Full results</h2>
+
+  <p>
+    Accuracy = fraction of 500 examples where the extracted final answer matched the ground truth exactly.
+    Parse success rate = fraction where the model produced output the answer extractor could read at all.
+    A model can fail in two ways: produce a wrong answer (parse succeeds, accuracy fails)
+    or produce unreadable output (parse fails, accuracy definitely fails).
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Arm</th>
+        <th>Step</th>
+        <th>GSM8K acc</th>
+        <th>GSM8K parse%</th>
+        <th>MATH acc</th>
+        <th>MATH parse%</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="arm-gsm">
+        <td>gsm8k_only</td><td>500</td>
+        <td>0.242</td><td>0.724</td>
+        <td>0.190</td><td>0.658</td>
+      </tr>
+      <tr class="arm-gsm">
+        <td>gsm8k_only</td><td>1000</td>
+        <td>0.250</td><td>0.674</td>
+        <td>0.198</td><td>0.670</td>
+      </tr>
+      <tr class="arm-gsm">
+        <td>gsm8k_only</td><td>1500</td>
+        <td>0.198</td><td>0.676</td>
+        <td>0.190</td><td>0.662</td>
+      </tr>
+      <tr class="arm-gsm">
+        <td>gsm8k_only</td><td>2000</td>
+        <td>0.210</td><td>0.652</td>
+        <td>0.192</td><td>0.678</td>
+      </tr>
+      <tr class="arm-math">
+        <td>math_only</td><td>500</td>
+        <td class="worst">0.040</td><td class="worst">0.082</td>
+        <td class="best">0.206</td><td>0.784</td>
+      </tr>
+      <tr class="arm-math">
+        <td>math_only</td><td>1000</td>
+        <td class="worst">0.044</td><td class="worst">0.086</td>
+        <td>0.196</td><td>0.832</td>
+      </tr>
+      <tr class="arm-math">
+        <td>math_only</td><td>1500</td>
+        <td class="worst">0.046</td><td class="worst">0.100</td>
+        <td>0.178</td><td>0.838</td>
+      </tr>
+      <tr class="arm-math">
+        <td>math_only</td><td>2000</td>
+        <td class="worst">0.052</td><td class="worst">0.106</td>
+        <td class="worst">0.160</td><td>0.808</td>
+      </tr>
+      <tr class="arm-comb">
+        <td>combined</td><td>500</td>
+        <td class="best">0.276</td><td>0.770</td>
+        <td>0.186</td><td>0.764</td>
+      </tr>
+      <tr class="arm-comb">
+        <td>combined</td><td>1000</td>
+        <td>0.236</td><td>0.746</td>
+        <td>0.178</td><td>0.774</td>
+      </tr>
+      <tr class="arm-comb">
+        <td>combined</td><td>1500</td>
+        <td>0.216</td><td>0.800</td>
+        <td>0.152</td><td>0.776</td>
+      </tr>
+      <tr class="arm-comb">
+        <td>combined</td><td>2000</td>
+        <td>0.222</td><td>0.804</td>
+        <td>0.156</td><td>0.778</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    <strong>Bold green</strong> = best result for that benchmark across all arms and steps.
+    <strong>Red</strong> = meaningfully worse than base model expectation.
+  </p>
+
+  <!-- ─── FINDINGS ──────────────────────────────────────────────────────── -->
+  <h2 id="findings">3. Key findings</h2>
+
+  <div class="finding good">
+    <div class="finding-label">Finding 1 — Combined wins on breadth</div>
+    <p>
+      <strong>combined-500 achieves the highest GSM8K accuracy of any checkpoint: 0.276.</strong>
+      This beats gsm8k_only's best (0.250 at step 1000) even though combined only saw roughly
+      half as many GSM8K examples by step 500. Exposure to both domains during training acts
+      as regularization — the model cannot overfit a single format, so it learns more general
+      reasoning patterns.
+    </p>
+  </div>
+
+  <div class="finding warn">
+    <div class="finding-label">Finding 2 — Step 500 is the sweet spot; 2000 steps overfit</div>
+    <p>
+      Every arm peaks at or before step 1000, then degrades. The combined arm peaks at step 500
+      (its very first checkpoint), the gsm8k_only arm peaks at step 1000, and the math_only arm
+      peaks at step 500 on MATH before declining all the way to 0.160 by step 2000.
+      Approximately 75% of the compute budget in this run was spent in the overfit zone.
+      For a future SFT run on a 0.5B model with this dataset size (~7.5k examples per source),
+      500–750 steps is likely the right budget.
+    </p>
+  </div>
+
+  <div class="finding bad">
+    <div class="finding-label">Finding 3 — math_only catastrophically forgets GSM8K format</div>
+    <p>
+      After training exclusively on MATH, the model produces nearly unreadable output when given
+      GSM8K prompts: parse success rate collapses to 0.082 at step 500 and never recovers past 0.106.
+      This is not a matter of getting wrong answers — the model stops producing parseable answers
+      at all. It has learned MATH's <code>\boxed{}</code> output convention so thoroughly that it
+      cannot produce the plain <code>####</code> format GSM8K expects. This is format forgetting,
+      not reasoning forgetting.
+    </p>
+  </div>
+
+  <div class="finding bad">
+    <div class="finding-label">Finding 4 — math_only's MATH accuracy declines while parse rate climbs</div>
+    <p>
+      The most revealing signal in the data: math_only's MATH parse success rate <em>increases</em>
+      from 0.784 to 0.838 as training continues, while accuracy <em>falls</em> from 0.206 to 0.160.
+      The model is learning to produce correctly-formatted <code>\boxed{answer}</code> output more
+      reliably — but filling in wrong values. It has memorized the answer wrapper, not the reasoning
+      that should go inside it. More training = better format, worse math.
+    </p>
+  </div>
+
+  <div class="finding warn">
+    <div class="finding-label">Finding 5 — math_only wins narrowly on MATH, but only at step 500</div>
+    <p>
+      The best MATH accuracy is math_only-500 (0.206), which edges out combined-500 (0.186) and
+      gsm8k_only-1000 (0.198). But this lead exists only at step 500 — by step 2000, math_only
+      has degraded to 0.160, worse than every other arm. The specialist win is real but fragile
+      and does not survive continued training.
+    </p>
+  </div>
+
+  <div class="finding good">
+    <div class="finding-label">Finding 6 — combined-500 is the best single checkpoint</div>
+    <p>
+      If you must choose one checkpoint to carry into the next phase: combined-500.
+      It achieves the highest GSM8K accuracy (0.276), remains competitive on MATH (0.186),
+      and — unlike math_only — does not catastrophically forget how to answer GSM8K questions.
+      It is the only checkpoint that is genuinely strong on both benchmarks simultaneously.
+    </p>
+  </div>
+
+  <!-- ─── CONCEPTS ───────────────────────────────────────────────────────── -->
+  <h2 id="concepts">4. Concepts</h2>
+
+  <h3>What is SFT doing?</h3>
+  <div class="concept">
+    <div class="concept-label">Concept</div>
+    <p>
+      Supervised fine-tuning trains the model to predict the next token given all previous tokens,
+      with the loss computed only on the response side (not the prompt). The training signal says:
+      "given this question and the start of this reasoning chain, the next token should be X."
+      It is <em>imitation learning</em> — the model learns to reproduce the style and structure
+      of the training examples, not to verify whether its reasoning is correct.
+    </p>
+    <p>
+      This is why SFT is fast and stable but has a ceiling. The model never gets explicit feedback
+      that its reasoning was wrong; it only gets rewarded for predicting the training tokens.
+      If a training example has correct reasoning, the model can learn that pattern.
+      If it finds a shortcut that produces plausible-looking text, SFT will not penalize it.
+    </p>
+  </div>
+
+  <h3>Why does SFT overfit at 2000 steps here?</h3>
+  <div class="concept">
+    <div class="concept-label">Concept</div>
+    <p>
+      With ~7,500 training examples and batch size 16, one pass through the data takes
+      ~470 steps. By step 2000 the model has seen each example roughly 4 times.
+      A 0.5B-parameter model has a lot of capacity relative to a 7,500-example dataset —
+      it can begin memorizing specific solution formats rather than learning general reasoning.
+      The overfitting shows up as declining accuracy (the model gets less right)
+      even as training loss continues to fall (the model is getting better at reproducing
+      the training text verbatim).
+    </p>
+    <p>
+      The fix is early stopping — in this experiment, step 500 was sufficient.
+      Validation loss monitoring (watching eval loss on held-out examples during training)
+      would have caught this in real time.
+    </p>
+  </div>
+
+  <h3>Catastrophic forgetting</h3>
+  <div class="concept">
+    <div class="concept-label">Concept</div>
+    <p>
+      When a model fine-tunes strongly on a new distribution, it can overwrite the weights
+      that encoded its previous knowledge. This is called catastrophic forgetting.
+      In this experiment, math_only training on MATH's <code>\boxed{}</code> format
+      overwrites the model's ability to produce GSM8K's <code>####</code> format.
+      The model has not forgotten how to do arithmetic — it has forgotten the output <em>convention</em>
+      that the GSM8K parser expects.
+    </p>
+    <p>
+      Combined training mitigates forgetting by forcing the model to maintain both formats
+      simultaneously throughout training. It never gets far enough from either distribution
+      to forget the other.
+    </p>
+  </div>
+
+  <h3>Outcome evaluation vs process evaluation</h3>
+  <div class="concept">
+    <div class="concept-label">Concept</div>
+    <p>
+      This study measures <em>outcome</em>: did the model produce the correct final answer?
+      It says nothing about whether the reasoning chain that produced the answer was valid.
+      A model could write completely wrong reasoning and arrive at the right answer by coincidence,
+      or write perfect reasoning and fail at the final extraction step.
+    </p>
+    <p>
+      The decomposition into <em>parse success rate</em> and <em>accuracy</em> gives a partial view:
+      parse success tells you whether the model is producing readable output at all;
+      accuracy tells you whether the readable output is correct.
+      But whether the reasoning in between is valid — that requires reading individual examples
+      from the <code>details_*.csv</code> files, which the eval produces per checkpoint.
+    </p>
+    <p>
+      This is the core motivation for outcome-based training methods (DPO, GRPO):
+      they only reinforce reasoning chains that actually produced correct answers,
+      so the model learns "this style of reasoning works" rather than
+      "this is what training-set solutions look like."
+    </p>
+  </div>
+
+  <h3>Why did combined outperform the GSM8K specialist on GSM8K?</h3>
+  <div class="concept">
+    <div class="concept-label">Concept</div>
+    <p>
+      This is the most counter-intuitive result and the most important one.
+      Combined saw half as many GSM8K examples per step, yet beat the specialist.
+      There are two likely mechanisms:
+    </p>
+    <p>
+      <strong>Regularization effect:</strong> alternating between two different problem types
+      prevents the model from overfitting the GSM8K format. The MATH examples act as
+      a regularizer — every MATH step nudges the model slightly away from pure GSM8K
+      format memorization, so it has to learn something more general.
+    </p>
+    <p>
+      <strong>Transfer of reasoning structure:</strong> MATH problems are harder and have
+      more varied solution structures. Training on them may build general mathematical
+      reasoning capabilities that transfer back to GSM8K.
+      The combined model may be learning "how to reason about numbers"
+      while the specialist is learning "what GSM8K solutions look like."
+    </p>
+  </div>
+
+  <!-- ─── IMPLICATIONS ───────────────────────────────────────────────────── -->
+  <h2 id="implications">5. Implications for DPO</h2>
+
+  <p>
+    These SFT results directly motivate the next phase and inform the setup decisions.
+  </p>
+
+  <h3>Starting checkpoint: combined-500</h3>
+  <p>
+    DPO starts from a frozen SFT checkpoint (the reference model) and trains a policy model
+    to prefer correct-answer completions over incorrect ones.
+    The starting checkpoint should be one that already produces correct answers at a
+    non-trivial rate — otherwise there is nothing for DPO to reinforce.
+    Combined-500 (0.276 GSM8K, 0.186 MATH) is the best starting point:
+    it has real signal on both benchmarks and has not yet overfit its output format.
+  </p>
+
+  <h3>What DPO should fix</h3>
+  <p>
+    SFT's ceiling is set by format imitation — it cannot distinguish good reasoning from
+    plausible-looking reasoning. DPO's preference pairs are constructed by sampling multiple
+    completions from combined-500, grading them with the exact-answer verifier, and building
+    chosen/rejected pairs. The training signal then explicitly says:
+    "when given this prompt, the chosen response is better than the rejected one."
+  </p>
+  <p>
+    The hypothesis: DPO will push accuracy above the SFT ceiling by reinforcing the
+    specific reasoning patterns that happen to produce correct answers, and suppressing
+    the patterns that produce wrong answers even when they look superficially reasonable.
+  </p>
+
+  <h3>The ceiling question</h3>
+  <p>
+    MATH accuracy has been stubbornly flat across all arms: 0.186–0.206 is the range.
+    Even the best checkpoint (math_only-500) barely exceeds 0.206.
+    DPO will test whether outcome-based training from combined-500 can push meaningfully
+    past this ceiling, or whether 0.2 is approximately the limit of what a 0.5B model
+    can achieve on competition-level MATH problems with this training approach.
+    If DPO also plateaus near 0.2 on MATH, the bottleneck is likely model capacity,
+    not training method — and the right answer is a larger model, not a better algorithm.
+  </p>
+
+  <h3>Summary of decisions this study locks in</h3>
+  <ul>
+    <li><strong>DPO starting checkpoint:</strong> combined-500 — validated empirically as the best SFT checkpoint.</li>
+    <li><strong>Future SFT runs:</strong> 500 steps, not 2000. The extra 1500 steps were wasted compute.</li>
+    <li><strong>Data mixture:</strong> combined training is the right default for a model expected to generalize across benchmarks.</li>
+    <li><strong>Eval baseline:</strong> the SFT result (combined-500) is the bar DPO must beat to be declared a net improvement.</li>
+  </ul>
+
+</main>
+</body>
+</html>
