@@ -436,6 +436,216 @@
   </section>
 
   <section>
+    <h2>Throughput Optimizations (Not Implemented)</h2>
+    <p>
+      The Phase 1 DPO run takes roughly 35 minutes end-to-end on a single A40
+      at the configured scale: 2000 prompts &times; K=8 samples for pair
+      generation, 500 DPO training steps, and 500-prompt eval against three
+      checkpoints. At under one dollar per run, the four optimizations below
+      were considered and explicitly deferred. They are documented so a future
+      self running Phase 2 or a larger sweep knows which knobs actually move
+      the needle.
+    </p>
+
+    <h3>1. vLLM for completion sampling (5-10&times; faster pair generation)</h3>
+    <p>
+      <strong>Where it helps.</strong> The pair-generation step inside
+      <code>scripts/build_dpo_pairs.py</code> calls
+      <code>model.generate()</code> from Hugging Face Transformers for
+      <code>2000 prompts &times; 8 samples = 16,000 generations</code>. This
+      is the longest single step in the pipeline.
+    </p>
+    <p>
+      <strong>What vLLM is.</strong> An open-source inference engine from UC
+      Berkeley's Sky Computing Lab that replaces
+      <code>transformers.generate()</code> with a runtime designed around how
+      autoregressive sampling actually behaves on a GPU.
+    </p>
+    <p>
+      <strong>Why it is faster.</strong> Three independent mechanisms stack:
+    </p>
+    <ul>
+      <li>
+        <strong>PagedAttention.</strong> The KV cache (the running record of
+        attention keys and values across already-generated tokens) is the
+        memory bottleneck during sampling. Hugging Face allocates one
+        contiguous slab per sequence sized for the worst case. vLLM borrows
+        the operating system's virtual-memory idea: it splits the KV cache
+        into fixed-size pages and allocates pages on demand. This frees
+        memory for larger batches and removes the worst-case padding tax.
+      </li>
+      <li>
+        <strong>Continuous batching.</strong> Hugging Face runs a batch to
+        completion; when one sequence finishes early (hits EOS), that GPU
+        slot sits idle until the longest sequence in the batch finishes.
+        vLLM swaps a new sequence into the freed slot immediately, so GPU
+        utilization stays near the ceiling rather than draining as the
+        batch unwinds.
+      </li>
+      <li>
+        <strong>Prefix sharing.</strong> For our K=8 case the same prompt
+        generates 8 samples. vLLM caches the prompt's KV state once and
+        forks at the sampling step. Hugging Face re-encodes the prompt 8
+        times.
+      </li>
+    </ul>
+    <p>
+      <strong>Estimated speedup.</strong> Pair generation drops from roughly
+      10 minutes to 1-2 minutes at this scale.
+    </p>
+    <p>
+      <strong>Integration sketch.</strong> Replace the
+      <code>sample_completions</code> function in
+      <code>scripts/build_dpo_pairs.py</code> with a vLLM
+      <code>LLM(model=...)</code> instance and call
+      <code>llm.generate</code> once per prompt batch with
+      <code>SamplingParams(n=8, temperature=0.8, top_p=0.95, max_tokens=768)</code>.
+      The grading path, JSONL writing, and pair construction stay identical.
+    </p>
+    <div class="callout warn">
+      <strong>Supply chain note</strong>
+      vLLM itself was not compromised in the March 2026 PyPI supply chain
+      incidents that affected <code>litellm</code> and <code>telnyx</code>.
+      It is actively maintained by a healthy contributor base out of UC
+      Berkeley. Pin an exact version (<code>vllm==X.Y.Z</code>) rather than
+      a range, and verify the installed version against the official
+      changelog before trusting it in a pipeline.
+    </div>
+
+    <h3>2. KV cache reuse via num_return_sequences (1.5-2&times; faster pair generation)</h3>
+    <p>
+      A no-new-dependency intermediate option if vLLM is too heavy. Today
+      the flattened items list at the top of <code>sample_completions</code>
+      repeats each prompt K=8 times in the batch, so the model re-encodes
+      the prompt eight times:
+    </p>
+    <pre><code>items = [(example, sample_idx)
+         for example in examples
+         for sample_idx in range(samples_per_prompt)]</code></pre>
+    <p>
+      Hugging Face's <code>generate()</code> accepts a
+      <code>num_return_sequences=K</code> argument that runs the prompt
+      encode once and forks K parallel decoders against the same KV cache.
+      The refactor is to drop the duplication, pass one prompt per batch
+      slot, and add <code>num_return_sequences=K</code> with a smaller
+      outer batch width to keep the K-fold inner expansion within memory.
+    </p>
+    <p>
+      Smaller gain than vLLM (1.5-2&times; rather than 5-10&times;) because
+      we still pay Hugging Face's contiguous KV slab and lack continuous
+      batching, but it has zero dependency risk and is roughly a thirty-line
+      change.
+    </p>
+
+    <h3>3. Precompute reference log-probabilities (~2&times; faster DPO training)</h3>
+    <p>
+      The DPO loss needs four log-probabilities per pair:
+      <code>logp_policy(chosen)</code>,
+      <code>logp_policy(rejected)</code>,
+      <code>logp_ref(chosen)</code>, and
+      <code>logp_ref(rejected)</code>. The reference model never updates.
+      So the two reference quantities are static functions of
+      <code>(checkpoint, pair)</code> and can be computed once, written next
+      to <code>pairs.jsonl</code>, and loaded as a tensor during training.
+    </p>
+    <p>
+      With reference logprobs precomputed: each training step becomes a
+      single forward pass per pair through the policy model only. The
+      reference model can be deleted from GPU memory entirely after the
+      precompute pass, freeing roughly 1 GB and letting the pair micro-batch
+      grow from 2 to 4 or 8. End-to-end DPO training time drops by roughly
+      40-50%.
+    </p>
+    <p>
+      Implementation lives in <code>finpost.training.dpo_train</code>: add a
+      one-time precompute pass at trainer init that iterates the pair
+      dataset under <code>torch.inference_mode()</code>, stores per-pair
+      log-probs as a parquet or torch tensor, then frees the reference
+      model. The training loop reads precomputed reference values instead of
+      running the reference forward.
+    </p>
+
+    <h3>4. Skip the base eval inside the DPO notebook</h3>
+    <p>
+      The DPO evaluation cell currently runs three checkpoints:
+    </p>
+    <pre><code>--checkpoints \
+  base=Qwen/Qwen2.5-0.5B \
+  sft_best=&lt;sft path&gt; \
+  dpo=&lt;dpo path&gt;</code></pre>
+    <p>
+      The base model's numbers are already in
+      <code>results/evals/ablation_a40_run_1/accuracy_summary.csv</code>
+      from the SFT ablation. Re-running it costs about 3-5 minutes per DPO
+      run for no new information. Two paths:
+    </p>
+    <ul>
+      <li>
+        <strong>Quick path.</strong> Drop
+        <code>base=Qwen/Qwen2.5-0.5B</code> from the eval CLI invocation in
+        the notebook. After the DPO eval finishes, append the base row from
+        the SFT ablation CSV when reading results for the comparison table.
+      </li>
+      <li>
+        <strong>Clean path.</strong> Teach
+        <code>finpost.evals.eval_exact</code> a <code>--reuse-from</code>
+        flag that accepts a prior <code>accuracy_summary.csv</code> and
+        skips any <code>(checkpoint, source)</code> pair already measured
+        at the same <code>n</code> and <code>seed</code>. This is more
+        invariant-safe but requires schema discipline in the eval CLI.
+      </li>
+    </ul>
+
+    <h3>Summary of expected gains at Phase 1 scale</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Optimization</th>
+          <th>Stage affected</th>
+          <th>Estimated time saved per run</th>
+          <th>Implementation cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>vLLM for pair generation</td>
+          <td>Pair sampling</td>
+          <td>~8 minutes (10 &rarr; 1-2)</td>
+          <td>Medium; new heavy dependency, refactor sample loop, pod-side test required</td>
+        </tr>
+        <tr>
+          <td><code>num_return_sequences</code> in HF</td>
+          <td>Pair sampling</td>
+          <td>~5 minutes (10 &rarr; 5)</td>
+          <td>Small; ~30-line refactor, no new dependency</td>
+        </tr>
+        <tr>
+          <td>Precompute reference logprobs</td>
+          <td>DPO training</td>
+          <td>~4-5 minutes (10 &rarr; 5-6)</td>
+          <td>Medium; trainer refactor, on-disk format, regression test</td>
+        </tr>
+        <tr>
+          <td>Skip base eval in DPO notebook</td>
+          <td>Evaluation</td>
+          <td>~3-5 minutes (15 &rarr; 10-12)</td>
+          <td>Trivial (drop arg) to small (<code>--reuse-from</code> flag)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>Why none of these were implemented for Phase 1</strong>
+      Phase 1 is a one-shot study, not a sweep. Total end-to-end cost is
+      under one dollar per run, and the implementation work to integrate
+      vLLM and refactor the trainer would exceed the time saved across all
+      Phase 1 runs combined. The right point to invest is when Phase 2
+      starts running grids over beta, learning rate, or pair-generation
+      seed - that is when these multipliers actually pay back.
+    </div>
+  </section>
+
+  <section>
     <h2>References</h2>
     <ul>
       <li>
