@@ -123,6 +123,23 @@ def test_dataset_tokenizes_serialized_prompt_and_masks_prompt_length(monkeypatch
     assert prompt_length == len(serialized_prompt)
 
 
+def test_dataset_loads_finchain_source(monkeypatch) -> None:
+    """FinChain plugs into the existing SFT dataset path."""
+    from finpost.training import dataset as dataset_module
+
+    records = [_example("finchain", i) for i in range(10)]
+    monkeypatch.setattr(dataset_module, "load_finchain", lambda split="train": records)
+
+    ds = dataset_module.PhasedSFTDataset(
+        data_config=DataConfig(sources=["finchain"], val_split_pct=20.0, seed=1),
+        tokenizer=TinyTokenizer(),
+        split="train",
+    )
+
+    assert len(ds) == 8
+    assert {ex.source for ex in ds.examples} == {"finchain"}
+
+
 def test_collator_packs_rows_masks_labels_and_resets_positions() -> None:
     """Packed rows preserve per-document loss masks and RoPE positions."""
     from finpost.training.dataset import PackingCollator, TokenizedSFTExample
@@ -153,7 +170,7 @@ def test_collator_packs_rows_masks_labels_and_resets_positions() -> None:
 
 
 def test_collator_isolates_attention_between_documents() -> None:
-    """A 4D mask blocks attention across packed document boundaries AND across the causal direction."""
+    """A 4D mask blocks cross-document attention and future leakage."""
     from finpost.training.dataset import PackingCollator, TokenizedSFTExample
 
     collator = PackingCollator(max_seq_len=6, eos_token_id=99, isolate_documents=True)

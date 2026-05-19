@@ -411,3 +411,18 @@ python -m pytest tests
 ```
 
 Then build the FinChain loader, verifier, and notebook before spending GPU money.
+
+Current local FinChain SFT canary:
+
+```powershell
+$env:FINPOST_FINCHAIN_TRAIN_JSONL = "C:\path\to\audited\finchain_train.jsonl"
+$env:WANDB_MODE = "offline"
+uv --cache-dir .uv-cache run --isolated --frozen --extra dev python -m finpost.training.train --config experiments/finchain/local_tiny_gpt2_sft.yaml --device cpu
+```
+
+Current FinChain exact-answer eval:
+
+```powershell
+$env:FINPOST_FINCHAIN_TEST_JSONL = "C:\path\to\audited\finchain_test.jsonl"
+uv --cache-dir .uv-cache run --isolated --frozen --extra dev python scripts/run_finchain_eval.py --checkpoints base=Qwen/Qwen3-4B-Base --n 200 --out-dir results/evals/finchain_base --device cuda
+```

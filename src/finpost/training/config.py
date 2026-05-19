@@ -39,7 +39,7 @@ _FROZEN_FORBID = ConfigDict(frozen=True, extra="forbid")
 
 # Allowed dataset sources for Phase 1. Stored as strings (not enum
 # objects) so the YAML serializes cleanly as a flat list of literals.
-DatasetSource = Literal["gsm8k", "math"]
+DatasetSource = Literal["gsm8k", "math", "finchain"]
 
 
 # Allowed model dtypes. Stored as strings; the trainer converts to
@@ -145,7 +145,7 @@ class TrainingConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _warmup_must_be_less_than_max(self) -> "TrainingConfig":
+    def _warmup_must_be_less_than_max(self) -> TrainingConfig:
         # Cross-field invariant: a cosine schedule with warmup_steps >=
         # max_steps means we'd never reach the decay phase. Almost
         # certainly a config bug. Catch at validation, not at run time.
@@ -166,7 +166,10 @@ class PackingConfig(BaseModel):
     )
     isolate_documents: bool = Field(
         default=True,
-        description="Build per-document attention masks so packed examples can't attend across boundaries.",
+        description=(
+            "Build per-document attention masks so packed examples cannot attend across "
+            "boundaries."
+        ),
     )
 
 
@@ -219,7 +222,7 @@ class Config(BaseModel):
     checkpointing: CheckpointConfig = Field(default_factory=CheckpointConfig)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "Config":
+    def from_yaml(cls, path: str | Path) -> Config:
         """Load and validate a YAML config from disk."""
         path = Path(path)
         with path.open("r", encoding="utf-8") as fp:

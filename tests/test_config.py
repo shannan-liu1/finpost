@@ -182,9 +182,15 @@ def test_empty_sources_rejected() -> None:
 
 
 def test_unknown_dataset_source_rejected() -> None:
-    """Literal['gsm8k', 'math'] enforces enum membership at validation time."""
+    """The dataset source Literal enforces enum membership at validation time."""
     with pytest.raises(ValidationError):
         DataConfig(sources=["foo"])  # type: ignore[list-item]
+
+
+def test_finchain_dataset_source_is_allowed() -> None:
+    """FinChain can use the existing SFT trainer data config."""
+    cfg = DataConfig(sources=["finchain"], val_split_pct=10.0)
+    assert cfg.sources == ["finchain"]
 
 
 def test_unknown_dtype_rejected() -> None:

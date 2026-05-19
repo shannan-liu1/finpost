@@ -23,6 +23,7 @@ from typing import Any, Literal
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from finpost.data.finchain import load_finchain
 from finpost.data.gsm8k import load_gsm8k
 from finpost.data.math_dataset import load_math
 from finpost.data.schema import Example, Source
@@ -113,6 +114,8 @@ class PhasedSFTDataset(Dataset):
             by_source["gsm8k"] = load_gsm8k(split="train")
         if "math" in self.data_config.sources:
             by_source["math"] = load_math(split="train")
+        if "finchain" in self.data_config.sources:
+            by_source["finchain"] = load_finchain(split="train")
 
         selected: list[Example] = []
         for source in self.data_config.sources:
