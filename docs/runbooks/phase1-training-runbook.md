@@ -465,6 +465,9 @@ python scripts/build_dpo_pairs.py \
   --samples-per-prompt 8 \
   --temperature 0.8 \
   --max-new-tokens 768 \
+  --max-new-tokens-gsm8k 256 \
+  --max-new-tokens-math 768 \
+  --generation-batch-size 64 \
   --seed 42 \
   --out-dir results/dpo_pairs/qwen_combined_2000s_a40_k8_v1 \
   --device cuda

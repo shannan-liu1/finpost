@@ -12,6 +12,7 @@ class TinyTokenizer:
 
     eos_token_id = 99
     pad_token_id = 0
+    name_or_path = "tiny-tokenizer"
 
     def __call__(self, text: str, *, add_special_tokens: bool = False) -> dict[str, list[int]]:
         del add_special_tokens
@@ -89,6 +90,7 @@ def test_dpo_collator_masks_prompt_and_padding_for_both_sides() -> None:
     assert batch["rejected_labels"][0, rejected_pad_start:].tolist() == [IGNORE_INDEX] * (
         batch["rejected_labels"].shape[1] - rejected_pad_start
     )
+    assert batch["chosen_input_ids"].shape == batch["rejected_input_ids"].shape
 
 
 def test_dpo_collator_rejects_truncated_rows_without_response_labels() -> None:
@@ -114,3 +116,46 @@ def test_dpo_collator_rejects_truncated_rows_without_response_labels() -> None:
         assert "no response tokens" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected no response tokens to raise")
+
+
+def test_tokenized_preference_dataset_cache_avoids_retokenizing(tmp_path) -> None:
+    """The full DPO run should reuse canary tokenization work from disk."""
+    from finpost.training.preference_data import load_or_build_tokenized_preference_dataset
+
+    pairs_path = tmp_path / "pairs.jsonl"
+    pairs_path.write_text(
+        json.dumps(
+            {
+                "prompt": "Q?",
+                "chosen": "long",
+                "rejected": "no",
+                "source": "gsm8k",
+                "prompt_id": "p0",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cache_path = tmp_path / "pairs.tokenized.pt"
+
+    first = load_or_build_tokenized_preference_dataset(
+        pairs_path=pairs_path,
+        tokenizer=TinyTokenizer(),
+        max_seq_len=128,
+        cache_path=cache_path,
+    )
+
+    class ExplodingTokenizer(TinyTokenizer):
+        def __call__(self, text: str, *, add_special_tokens: bool = False) -> dict[str, list[int]]:
+            raise AssertionError(f"cache miss retokenized {text!r}")
+
+    second = load_or_build_tokenized_preference_dataset(
+        pairs_path=pairs_path,
+        tokenizer=ExplodingTokenizer(),
+        max_seq_len=128,
+        cache_path=cache_path,
+    )
+
+    assert cache_path.exists()
+    assert len(first) == len(second) == 1
+    assert first[0].chosen_input_ids.tolist() == second[0].chosen_input_ids.tolist()

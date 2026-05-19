@@ -6,6 +6,8 @@ model:
 data:
   pairs_path: results/dpo_pairs/qwen_combined_2000s_a40_k8_v1/pairs.jsonl
   manifest_path: results/dpo_pairs/qwen_combined_2000s_a40_k8_v1/manifest.json
+  tokenized_cache_path: results/dpo_pairs/qwen_combined_2000s_a40_k8_v1/pairs.tokenized.pt
+  rebuild_tokenized_cache: false
   seed: 42
 dpo:
   beta: 0.1
@@ -17,7 +19,9 @@ training:
   grad_accum_steps: 8
   grad_clip: 1.0
   checkpoint_every_n_steps: 250
-  per_device_pair_batch_size: 2
+  per_device_pair_batch_size: 4
+  dataloader_num_workers: 2
+  pin_memory: true
 packing:
   max_seq_len: 1024
 logging:

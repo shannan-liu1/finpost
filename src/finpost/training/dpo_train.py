@@ -13,11 +13,11 @@ from typing import IO, Any, NamedTuple
 import numpy as np
 import safetensors.torch
 import torch
-import wandb
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from torch.utils.data import DataLoader
 
+import wandb
 from finpost.safety import safe_load_model, safe_load_tokenizer
 from finpost.training._guards import check_finite_loss
 from finpost.training.checkpoint import apply_retention_policy
@@ -25,7 +25,10 @@ from finpost.training.config import CheckpointConfig, DType, LoggingConfig, Pack
 from finpost.training.dpo import dpo_loss_from_logits
 from finpost.training.masking import IGNORE_INDEX
 from finpost.training.optim import build_lr_scheduler, build_optimizer
-from finpost.training.preference_data import DPOCollator, DPOPreferenceDataset
+from finpost.training.preference_data import (
+    DPOCollator,
+    load_or_build_tokenized_preference_dataset,
+)
 
 _FROZEN_FORBID = ConfigDict(frozen=True, extra="forbid")
 _STEP_PREFIX = "step-"
@@ -54,6 +57,14 @@ class DPODataConfig(BaseModel):
 
     pairs_path: Path = Field(..., description="JSONL preference pairs for DPO.")
     manifest_path: Path | None = Field(default=None, description="Pair-generation manifest path.")
+    tokenized_cache_path: Path | None = Field(
+        default=None,
+        description="Optional torch cache for tokenized DPO pairs.",
+    )
+    rebuild_tokenized_cache: bool = Field(
+        default=False,
+        description="Force rebuilding tokenized_cache_path even if metadata matches.",
+    )
     seed: int = Field(default=42, ge=0, description="Seed for shuffling and training RNGs.")
 
 
@@ -74,6 +85,8 @@ class DPOTrainingConfig(BaseModel):
     grad_clip: float = Field(default=1.0, gt=0.0)
     checkpoint_every_n_steps: int = Field(default=250, gt=0)
     per_device_pair_batch_size: int = Field(default=2, ge=1)
+    dataloader_num_workers: int = Field(default=0, ge=0)
+    pin_memory: bool = Field(default=True)
 
     @model_validator(mode="after")
     def _warmup_must_be_less_than_max(self) -> DPOTrainingConfig:
@@ -147,6 +160,7 @@ def _seed_everything(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+        torch.set_float32_matmul_precision("high")
     np.random.seed(seed)
     random.seed(seed)
 
@@ -253,18 +267,34 @@ class DPOTrainer:
         self.reference.requires_grad_(False)
         self.reference.config.use_cache = False
 
-        dataset = DPOPreferenceDataset(self.config.data.pairs_path)
+        dataset = load_or_build_tokenized_preference_dataset(
+            pairs_path=self.config.data.pairs_path,
+            tokenizer=self.tokenizer,
+            max_seq_len=self.config.packing.max_seq_len,
+            cache_path=self.config.data.tokenized_cache_path,
+            rebuild_cache=self.config.data.rebuild_tokenized_cache,
+        )
         generator = torch.Generator()
         generator.manual_seed(self.config.data.seed)
+        num_workers = self.config.training.dataloader_num_workers
+        pin_memory = self.config.training.pin_memory and self.device.type == "cuda"
+        dataloader_kwargs: dict[str, Any] = {}
+        if num_workers > 0:
+            dataloader_kwargs["persistent_workers"] = True
+            dataloader_kwargs["prefetch_factor"] = 2
         self.train_loader = DataLoader(
             dataset,
             batch_size=self.config.training.per_device_pair_batch_size,
             shuffle=True,
             generator=generator,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
             collate_fn=DPOCollator(
-                tokenizer=self.tokenizer,
+                tokenizer=None,
                 max_seq_len=self.config.packing.max_seq_len,
+                pad_token_id=self.tokenizer.pad_token_id,
             ),
+            **dataloader_kwargs,
         )
 
         self.optimizer = build_optimizer(
@@ -376,36 +406,42 @@ class DPOTrainer:
 
     def _forward_loss(self, batch: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
         assert self.policy is not None and self.reference is not None
-        chosen_input_ids = batch["chosen_input_ids"].to(self.device)
-        chosen_attention_mask = batch["chosen_attention_mask"].to(self.device)
-        chosen_labels = batch["chosen_labels"].to(self.device)
-        rejected_input_ids = batch["rejected_input_ids"].to(self.device)
-        rejected_attention_mask = batch["rejected_attention_mask"].to(self.device)
-        rejected_labels = batch["rejected_labels"].to(self.device)
+        chosen_input_ids = batch["chosen_input_ids"].to(self.device, non_blocking=True)
+        chosen_attention_mask = batch["chosen_attention_mask"].to(
+            self.device,
+            non_blocking=True,
+        )
+        chosen_labels = batch["chosen_labels"].to(self.device, non_blocking=True)
+        rejected_input_ids = batch["rejected_input_ids"].to(self.device, non_blocking=True)
+        rejected_attention_mask = batch["rejected_attention_mask"].to(
+            self.device,
+            non_blocking=True,
+        )
+        rejected_labels = batch["rejected_labels"].to(self.device, non_blocking=True)
 
-        policy_chosen = self.policy(
-            input_ids=chosen_input_ids,
-            attention_mask=chosen_attention_mask,
-        )
-        policy_rejected = self.policy(
-            input_ids=rejected_input_ids,
-            attention_mask=rejected_attention_mask,
-        )
+        input_ids = torch.cat([chosen_input_ids, rejected_input_ids], dim=0)
+        attention_mask = torch.cat([chosen_attention_mask, rejected_attention_mask], dim=0)
+        pair_count = chosen_input_ids.size(0)
+
+        policy_logits = self.policy(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+        ).logits
+        policy_chosen_logits, policy_rejected_logits = policy_logits.split(pair_count, dim=0)
+        del policy_logits
+
         with torch.no_grad():
-            ref_chosen = self.reference(
-                input_ids=chosen_input_ids,
-                attention_mask=chosen_attention_mask,
-            )
-            ref_rejected = self.reference(
-                input_ids=rejected_input_ids,
-                attention_mask=rejected_attention_mask,
-            )
+            ref_logits = self.reference(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            ).logits
+        ref_chosen_logits, ref_rejected_logits = ref_logits.split(pair_count, dim=0)
 
         return dpo_loss_from_logits(
-            policy_chosen_logits=policy_chosen.logits,
-            policy_rejected_logits=policy_rejected.logits,
-            ref_chosen_logits=ref_chosen.logits,
-            ref_rejected_logits=ref_rejected.logits,
+            policy_chosen_logits=policy_chosen_logits,
+            policy_rejected_logits=policy_rejected_logits,
+            ref_chosen_logits=ref_chosen_logits,
+            ref_rejected_logits=ref_rejected_logits,
             chosen_labels=chosen_labels,
             rejected_labels=rejected_labels,
             beta=self.config.dpo.beta,
@@ -509,6 +545,7 @@ def print_effective_config(
         f"  reference_checkpoint:    {config.model.reference_checkpoint}",
         f"  dtype:                   {config.model.dtype}",
         f"  pairs_path:              {config.data.pairs_path}",
+        f"  tokenized_cache_path:    {config.data.tokenized_cache_path}",
         f"  beta:                    {config.dpo.beta}",
         f"  max_steps:               {config.training.max_steps}",
         f"  warmup_steps:            {config.training.warmup_steps}",
@@ -516,6 +553,8 @@ def print_effective_config(
         f"  per_device_pair_batch:   {config.training.per_device_pair_batch_size}",
         f"  grad_accum_steps:        {config.training.grad_accum_steps}",
         f"  effective pair batch:    {effective_pair_batch}",
+        f"  dataloader_num_workers:  {config.training.dataloader_num_workers}",
+        f"  pin_memory:              {config.training.pin_memory}",
         f"  max_seq_len:             {config.packing.max_seq_len}",
         f"  save_dir:                {config.checkpointing.save_dir}",
         f"  resume_from:             {config.checkpointing.resume_from}",

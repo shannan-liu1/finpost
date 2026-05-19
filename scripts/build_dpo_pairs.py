@@ -12,7 +12,7 @@ import argparse
 import json
 import random
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -188,6 +188,27 @@ def summarize_completion_groups(records: list[CompletionRecord]) -> dict[str, in
     return summary
 
 
+def resolve_max_new_tokens_by_source(
+    *,
+    sources: list[Source],
+    max_new_tokens: int,
+    max_new_tokens_gsm8k: int | None = None,
+    max_new_tokens_math: int | None = None,
+) -> dict[Source, int]:
+    """Resolve per-source generation budgets from CLI overrides."""
+    overrides = {
+        "gsm8k": max_new_tokens_gsm8k,
+        "math": max_new_tokens_math,
+    }
+    resolved: dict[Source, int] = {}
+    for source in sources:
+        budget = overrides[source] if overrides[source] is not None else max_new_tokens
+        if budget <= 0:
+            raise ValueError(f"max_new_tokens for {source} must be positive")
+        resolved[source] = budget
+    return resolved
+
+
 def _batched(items: list[Any], batch_size: int) -> list[list[Any]]:
     return [
         items[start : start + batch_size]
@@ -202,7 +223,7 @@ def sample_completions(
     examples: list[Example],
     samples_per_prompt: int,
     generation_batch_size: int,
-    max_new_tokens: int,
+    max_new_tokens_by_source: dict[Source, int],
     temperature: float,
     top_p: float,
     device: torch.device,
@@ -212,58 +233,143 @@ def sample_completions(
         raise ValueError("samples_per_prompt must be positive")
     if generation_batch_size <= 0:
         raise ValueError("generation_batch_size must be positive")
-    if max_new_tokens <= 0:
-        raise ValueError("max_new_tokens must be positive")
     if temperature <= 0.0:
         raise ValueError("temperature must be positive for DPO pair sampling")
 
-    items: list[tuple[Example, int]] = [
-        (example, sample_idx)
-        for example in examples
-        for sample_idx in range(samples_per_prompt)
-    ]
+    items_by_source: dict[Source, list[tuple[Example, int]]] = {}
+    for example in examples:
+        for sample_idx in range(samples_per_prompt):
+            items_by_source.setdefault(example.source, []).append((example, sample_idx))
+
     records: list[CompletionRecord] = []
     model.eval()
+    model.config.use_cache = True
     if getattr(tokenizer, "pad_token_id", None) is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
 
-    for batch in tqdm(
-        _batched(items, generation_batch_size),
-        desc="sampling completions",
-        total=(len(items) + generation_batch_size - 1) // generation_batch_size,
-    ):
-        prompts = [serialize_prompt(example.prompt) for example, _ in batch]
-        encoded = tokenizer(prompts, return_tensors="pt", padding=True)
-        encoded = {key: value.to(device) for key, value in encoded.items()}
-        input_width = encoded["input_ids"].shape[1]
-        with torch.inference_mode():
-            output_ids = model.generate(
-                **encoded,
-                do_sample=True,
-                temperature=temperature,
-                top_p=top_p,
-                max_new_tokens=max_new_tokens,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
-
-        for row_idx, (example, sample_idx) in enumerate(batch):
-            generated_ids = output_ids[row_idx, input_width:]
-            completion = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
-            predicted, correct = _completion_grade(example, completion)
-            records.append(
-                CompletionRecord(
-                    prompt_id=example.id,
-                    prompt=example.prompt,
-                    source=example.source,
-                    gold_answer=example.final_answer,
-                    sample_index=sample_idx,
-                    completion=completion,
-                    predicted_answer=predicted,
-                    correct=correct,
+    for source in sorted(items_by_source):
+        items = items_by_source[source]
+        max_new_tokens = max_new_tokens_by_source[source]
+        for batch in tqdm(
+            _batched(items, generation_batch_size),
+            desc=f"sampling {source} completions",
+            total=(len(items) + generation_batch_size - 1) // generation_batch_size,
+        ):
+            records.extend(
+                _sample_batch_with_oom_fallback(
+                    model=model,
+                    tokenizer=tokenizer,
+                    batch=batch,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    device=device,
                 )
             )
+    return records
+
+
+def _is_cuda_oom(exc: RuntimeError) -> bool:
+    message = str(exc).lower()
+    return "out of memory" in message or "cuda error: out of memory" in message
+
+
+def _sample_batch_with_oom_fallback(
+    *,
+    model: Any,
+    tokenizer: Any,
+    batch: list[tuple[Example, int]],
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    device: torch.device,
+) -> list[CompletionRecord]:
+    try:
+        return _sample_batch(
+            model=model,
+            tokenizer=tokenizer,
+            batch=batch,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            device=device,
+        )
+    except RuntimeError as exc:
+        if not _is_cuda_oom(exc) or len(batch) == 1:
+            raise
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        midpoint = len(batch) // 2
+        print(
+            "[pairs] CUDA OOM while sampling batch "
+            f"size {len(batch)}; retrying as {midpoint}+{len(batch) - midpoint}"
+        )
+        return [
+            *_sample_batch_with_oom_fallback(
+                model=model,
+                tokenizer=tokenizer,
+                batch=batch[:midpoint],
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                device=device,
+            ),
+            *_sample_batch_with_oom_fallback(
+                model=model,
+                tokenizer=tokenizer,
+                batch=batch[midpoint:],
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                device=device,
+            ),
+        ]
+
+
+def _sample_batch(
+    *,
+    model: Any,
+    tokenizer: Any,
+    batch: list[tuple[Example, int]],
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    device: torch.device,
+) -> list[CompletionRecord]:
+    prompts = [serialize_prompt(example.prompt) for example, _ in batch]
+    encoded = tokenizer(prompts, return_tensors="pt", padding=True)
+    encoded = {key: value.to(device) for key, value in encoded.items()}
+    input_width = encoded["input_ids"].shape[1]
+    with torch.inference_mode():
+        output_ids = model.generate(
+            **encoded,
+            do_sample=True,
+            temperature=temperature,
+            top_p=top_p,
+            max_new_tokens=max_new_tokens,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            use_cache=True,
+        )
+
+    records: list[CompletionRecord] = []
+    for row_idx, (example, sample_idx) in enumerate(batch):
+        generated_ids = output_ids[row_idx, input_width:]
+        completion = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+        predicted, correct = _completion_grade(example, completion)
+        records.append(
+            CompletionRecord(
+                prompt_id=example.id,
+                prompt=example.prompt,
+                source=example.source,
+                gold_answer=example.final_answer,
+                sample_index=sample_idx,
+                completion=completion,
+                predicted_answer=predicted,
+                correct=correct,
+            )
+        )
     return records
 
 
@@ -292,8 +398,10 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--heldout-train-n", type=int, default=2000)
     parser.add_argument("--samples-per-prompt", type=int, default=8)
-    parser.add_argument("--generation-batch-size", type=int, default=8)
+    parser.add_argument("--generation-batch-size", type=int, default=64)
     parser.add_argument("--max-new-tokens", type=int, default=768)
+    parser.add_argument("--max-new-tokens-gsm8k", type=int, default=None)
+    parser.add_argument("--max-new-tokens-math", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--max-pairs-per-prompt", type=int, default=None)
@@ -315,6 +423,9 @@ def main() -> None:
     args = _parse_args()
     random.seed(args.seed)
     torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+        torch.set_float32_matmul_precision("high")
 
     device_name = (
         "cuda"
@@ -342,6 +453,13 @@ def main() -> None:
         for source in args.sources
     }
     print(f"[pairs] selected {len(examples)} prompts: {source_counts}")
+    max_new_tokens_by_source = resolve_max_new_tokens_by_source(
+        sources=args.sources,
+        max_new_tokens=args.max_new_tokens,
+        max_new_tokens_gsm8k=args.max_new_tokens_gsm8k,
+        max_new_tokens_math=args.max_new_tokens_math,
+    )
+    print(f"[pairs] max_new_tokens_by_source: {max_new_tokens_by_source}")
 
     print(f"[pairs] loading model from {args.model_checkpoint} on {device} ({args.dtype})")
     tokenizer = safe_load_tokenizer(str(args.model_checkpoint))
@@ -357,7 +475,7 @@ def main() -> None:
         examples=examples,
         samples_per_prompt=args.samples_per_prompt,
         generation_batch_size=args.generation_batch_size,
-        max_new_tokens=args.max_new_tokens,
+        max_new_tokens_by_source=max_new_tokens_by_source,
         temperature=args.temperature,
         top_p=args.top_p,
         device=device,
@@ -378,6 +496,7 @@ def main() -> None:
     sampling_metadata = {
         "samples_per_prompt": args.samples_per_prompt,
         "max_new_tokens": args.max_new_tokens,
+        "max_new_tokens_by_source": max_new_tokens_by_source,
         "temperature": args.temperature,
         "top_p": args.top_p,
         "max_pairs_per_prompt": args.max_pairs_per_prompt,
@@ -396,7 +515,7 @@ def main() -> None:
     correct_count = sum(record.correct for record in records)
     group_summary = summarize_completion_groups(records)
     manifest = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "model_checkpoint": str(args.model_checkpoint),
         "verifier": "finpost.evals.sources.REGISTRY",
         "sources": args.sources,
@@ -405,6 +524,7 @@ def main() -> None:
         "samples_per_prompt": args.samples_per_prompt,
         "generation_batch_size": args.generation_batch_size,
         "max_new_tokens": args.max_new_tokens,
+        "max_new_tokens_by_source": max_new_tokens_by_source,
         "temperature": args.temperature,
         "top_p": args.top_p,
         "max_pairs_per_prompt": args.max_pairs_per_prompt,

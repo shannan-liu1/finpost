@@ -254,6 +254,9 @@
   --samples-per-prompt 8 \
   --temperature 0.8 \
   --max-new-tokens 768 \
+  --max-new-tokens-gsm8k 256 \
+  --max-new-tokens-math 768 \
+  --generation-batch-size 64 \
   --seed 42 \
   --out-dir results/dpo_pairs/qwen_sft_best_k8_v1</code></pre>
 
@@ -436,15 +439,14 @@
   </section>
 
   <section>
-    <h2>Throughput Optimizations (Not Implemented)</h2>
+    <h2>Throughput Optimizations</h2>
     <p>
-      The Phase 1 DPO run takes roughly 35 minutes end-to-end on a single A40
-      at the configured scale: 2000 prompts &times; K=8 samples for pair
-      generation, 500 DPO training steps, and 500-prompt eval against three
-      checkpoints. At under one dollar per run, the four optimizations below
-      were considered and explicitly deferred. They are documented so a future
-      self running Phase 2 or a larger sweep knows which knobs actually move
-      the needle.
+      The current operator path now includes the low-risk throughput changes:
+      larger Hugging Face generation batches with CUDA OOM halving,
+      source-specific generation token caps, live notebook subprocess output,
+      tokenized DPO pair caching, pinned-memory DataLoader transfer, and fused
+      chosen/rejected model forwards. The heavier ideas below remain optional
+      larger-sweep work.
     </p>
 
     <h3>1. vLLM for completion sampling (5-10&times; faster pair generation)</h3>

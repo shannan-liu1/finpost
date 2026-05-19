@@ -104,3 +104,15 @@ def test_summarize_completion_groups_counts_pairability() -> None:
         "all_incorrect_prompt_count": 1,
         "empty_prompt_count": 0,
     }
+
+
+def test_resolve_max_new_tokens_by_source_overrides_global_budget() -> None:
+    """Pair generation should avoid spending MATH-sized token budgets on GSM8K."""
+    from scripts.build_dpo_pairs import resolve_max_new_tokens_by_source
+
+    assert resolve_max_new_tokens_by_source(
+        sources=["gsm8k", "math"],
+        max_new_tokens=768,
+        max_new_tokens_gsm8k=256,
+        max_new_tokens_math=None,
+    ) == {"gsm8k": 256, "math": 768}

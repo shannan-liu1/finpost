@@ -109,3 +109,53 @@ def test_dpo_checkpoint_round_trips_model_optimizer_scheduler_and_config(tmp_pat
     assert state.step == 12
     assert state.config.model.policy_checkpoint == config.model.policy_checkpoint
     assert set(state.model_state_dict) == set(model.state_dict())
+
+
+def test_forward_loss_batches_chosen_and_rejected_into_two_model_calls(tmp_path) -> None:
+    """The hot path should be one policy forward and one reference forward."""
+    import types
+
+    import torch
+
+    from finpost.training.dpo_train import DPOConfig, DPOTrainer
+    from finpost.training.masking import IGNORE_INDEX
+
+    class CountingLM(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+            self.weight = torch.nn.Parameter(torch.tensor(0.0))
+
+        def forward(self, *, input_ids, attention_mask):
+            del attention_mask
+            self.calls += 1
+            logits = torch.zeros(
+                (input_ids.shape[0], input_ids.shape[1], 8),
+                dtype=torch.float32,
+            )
+            return types.SimpleNamespace(logits=logits + self.weight)
+
+    config = DPOConfig.model_validate(_raw_config(tmp_path))
+    trainer = DPOTrainer(config, device="cpu")
+    trainer.policy = CountingLM()
+    trainer.reference = CountingLM()
+    batch = {
+        "chosen_input_ids": torch.tensor([[1, 2, 3], [1, 4, 5]]),
+        "chosen_attention_mask": torch.ones((2, 3), dtype=torch.long),
+        "chosen_labels": torch.tensor(
+            [[IGNORE_INDEX, 2, 3], [IGNORE_INDEX, 4, 5]],
+            dtype=torch.long,
+        ),
+        "rejected_input_ids": torch.tensor([[1, 2, 4], [1, 4, 6]]),
+        "rejected_attention_mask": torch.ones((2, 3), dtype=torch.long),
+        "rejected_labels": torch.tensor(
+            [[IGNORE_INDEX, 2, 4], [IGNORE_INDEX, 4, 6]],
+            dtype=torch.long,
+        ),
+    }
+
+    loss, _ = trainer._forward_loss(batch)
+
+    assert loss.requires_grad
+    assert trainer.policy.calls == 1
+    assert trainer.reference.calls == 1
