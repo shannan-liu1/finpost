@@ -1,32 +1,37 @@
 # Context: finpost
 
-A learning project to internalize the fundamentals of language-model post-training by applying them to financial data drawn from EDGAR filings. The financial domain is a forcing function for non-toy data, not a product target.
+A learning project to internalize the fundamentals of language-model post-training by applying them to financial reasoning over published company filings. The canonical evaluation target is the FinQA benchmark (Chen et al., 2021) — multi-step numerical questions over S&P 500 annual and quarterly report excerpts. The financial domain is a forcing function for non-toy data, not a product target.
 
 ## Project intent
 
 - **Primary goal (~70%):** Learn the fundamentals of post-training at a deep level — including the working vocabulary used by practitioners. No abbreviations in documentation; spell out terms on first use.
-- **Secondary goal (~30%):** Produce a credible artifact in the financial-reasoning domain that reflects the user's background and interest in finance, distinguishing this work from a generic benchmark project.
+- **Secondary goal (~30%):** Produce a credible artifact in the financial-reasoning domain that reflects the user's background and interest in finance, distinguishing this work from a generic benchmark project. The concrete target is measurable post-training improvement on the FinQA benchmark — a peer-reviewed dataset of numerical questions over real earnings reports — using the SFT, DPO, OPD, and GRPO methods built in this repo. FinQA replaces an earlier plan to self-compile a 10-K reasoning dataset: FinQA is already cleaned, has an official numeric-tolerance evaluation script, and has published baselines and a leaderboard for honest comparison.
 - **Success bar:** The evaluation harness shows a statistically defensible improvement on a clearly-scoped problem the user defined. Not: "an analyst would use this model."
+- **Phase 1 note:** GSM8K and MATH are the scaffolding the SFT and DPO pipelines were built and validated against. They are general numerical-reasoning benchmarks, not finance, and are retained as smoke-test sources for the trainer and verifier — not as the finance evaluation target. Finance evaluation runs against FinQA.
 
 ## Target capability
 
-The model is being post-trained to perform two related skills over a single filing excerpt provided as input context:
+The model is being post-trained to perform two related skills over a single filing excerpt (a passage of text together with an embedded table) provided as input context, matching the FinQA task structure:
 
-1. **Numerical extraction** — given an excerpt, return a specific figure asked about (e.g. "What was operating income for fiscal year 2023?"). Verified by exact numeric or string match against ground truth.
-2. **Numerical reasoning over a filing** — given an excerpt, *compute* a derived quantity (year-over-year change, gross margin, segment contribution to total revenue). The model must identify the correct line items *and* perform the arithmetic correctly. Verified programmatically against ground truth.
+1. **Numerical extraction** — given an excerpt, return a specific figure asked about (e.g. "What was operating income for fiscal year 2023?"). Verified by exact numeric match or normalized-string match against ground truth.
+2. **Numerical reasoning over an excerpt** — given an excerpt, *compute* a derived quantity (year-over-year change, gross margin, segment contribution to total revenue). The model must identify the correct line items from the table or surrounding text *and* perform the arithmetic correctly. Verified programmatically using FinQA's numeric-equivalence-with-tolerance scoring.
 
 Explicitly out of scope for this project:
 - Open-ended analytical answers requiring qualitative judgment
 - Accounting-textbook problems (journal entries, statement preparation) divorced from a real filing
 - Cross-filing retrieval, reconciliation, or comparison
+- Reproducing FinQA's intermediate reasoning program (the DSL operator chain). The model is scored on the final answer only; the program is treated as a teacher artifact, not a training target.
 
 ## Glossary
 
 ### Filing
-A document submitted by a registrant to the United States Securities and Exchange Commission via the EDGAR system. In this project, restricted to annual reports (Form 10-K) and quarterly reports (Form 10-Q).
+A document submitted by a registrant to the United States Securities and Exchange Commission via the EDGAR system. In this project, restricted to annual reports (Form 10-K) and quarterly reports (Form 10-Q). FinQA excerpts originate from such reports, preprocessed by the FinQA authors into the (text passage, table, question, answer) units the benchmark distributes.
 
 ### Filing excerpt
-A bounded slice of a filing (one section, one table, or a small group of related paragraphs) provided to the model as input context for a single task. The unit of grounding — every numerical answer must be traceable to the excerpt that was given.
+A bounded slice of a filing (one section, one table, or a small group of related paragraphs) provided to the model as input context for a single task. The unit of grounding — every numerical answer must be traceable to the excerpt that was given. In FinQA, each excerpt is structured as a textual passage adjacent to a single embedded table; the model sees both.
+
+### FinQA
+A benchmark dataset published by Chen et al. (2021, Stanford and JP Morgan) of multi-step numerical questions answered over excerpts from S&P 500 annual and quarterly reports. Each example provides a textual passage, an embedded table, a natural-language question, an intermediate reasoning program, and a single numeric ground-truth answer. The canonical finance evaluation target for this project. Final answer is scored using FinQA's numeric-tolerance evaluation; the intermediate reasoning program is not trained against or scored.
 
 ### Numerical extraction
 The task of returning a single figure that appears verbatim in a filing excerpt. Distinguished from numerical reasoning by the absence of any arithmetic on the model's part.
