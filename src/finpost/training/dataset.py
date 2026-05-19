@@ -327,17 +327,29 @@ def make_loaders(config: Config, tokenizer: Any) -> tuple[DataLoader, DataLoader
     train_generator = torch.Generator()
     train_generator.manual_seed(config.data.seed)
 
+    dataloader_kwargs: dict[str, Any] = {}
+    num_workers = config.training.dataloader_num_workers
+    if num_workers > 0:
+        dataloader_kwargs["persistent_workers"] = True
+        dataloader_kwargs["prefetch_factor"] = 2
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config.training.per_device_batch_size,
         shuffle=True,
         collate_fn=collator,
         generator=train_generator,
+        num_workers=num_workers,
+        pin_memory=config.training.pin_memory,
+        **dataloader_kwargs,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=config.training.per_device_batch_size,
         shuffle=False,
         collate_fn=collator,
+        num_workers=num_workers,
+        pin_memory=config.training.pin_memory,
+        **dataloader_kwargs,
     )
     return train_loader, val_loader

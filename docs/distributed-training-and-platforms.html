@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Distributed training and GPU platform guide</title>
+<style>
+:root {
+  color-scheme: light only;
+  --bg: #fbfbfa;
+  --fg: #18202f;
+  --muted: #5c6678;
+  --line: #d9dee7;
+  --panel: #ffffff;
+  --soft: #eef3fb;
+  --note: #fff8e6;
+  --ok: #236b3d;
+  --warn: #9a6200;
+  --bad: #9f3030;
+  --code: #f2f4f8;
+  --max: 1040px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.62 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+main { max-width: var(--max); margin: 0 auto; padding: 42px 24px 84px; }
+header { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 26px; }
+h1 { margin: 0 0 8px; font-size: 2.15rem; line-height: 1.12; letter-spacing: 0; }
+h2 { margin: 42px 0 14px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 1.45rem; }
+h3 { margin: 28px 0 10px; font-size: 1.12rem; }
+h4 { margin: 22px 0 8px; font-size: 1rem; color: #2a4d80; }
+p { margin: 0 0 14px; }
+ul, ol { margin: 0 0 16px 24px; padding: 0; }
+li { margin: 6px 0; }
+a { color: #244f86; text-decoration: none; border-bottom: 1px dotted currentColor; }
+a:hover { border-bottom-style: solid; }
+code {
+  background: var(--code);
+  border-radius: 4px;
+  padding: 0.12rem 0.28rem;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 0.9em;
+}
+pre {
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+pre code { background: transparent; padding: 0; }
+blockquote {
+  margin: 18px 0;
+  padding: 14px 18px;
+  border-left: 4px solid #2a4d80;
+  background: var(--soft);
+  border-radius: 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 700; }
+tr:last-child td { border-bottom: 0; }
+.toc {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 20px 0 34px;
+}
+.toc strong { display: block; margin-bottom: 8px; }
+.toc ol { margin-bottom: 0; columns: 2; }
+@media (max-width: 740px) { .toc ol { columns: 1; } main { padding: 30px 18px 70px; } }
+.meta { color: var(--muted); margin: 0; }
+.active-direction-banner {
+  border: 1px solid #d8c58a;
+  background: var(--note);
+  color: #4a3510;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 22px;
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>Distributed training and GPU platform guide</h1>
+<p class="meta">Rendered from <code>docs/distributed-training-and-platforms.md</code>. Open offline in any browser.</p>
+</header>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#1-why-multi-gpu-matters-for-post-training-roles">1. Why multi-GPU matters for post-training roles</a></li>
+<li><a href="#2-the-core-vocabulary">2. The core vocabulary</a></li>
+<li><a href="#3-ddp-versus-fsdp-versus-deepspeed-zero">3. DDP versus FSDP versus DeepSpeed ZeRO</a></li>
+<li><a href="#4-what-should-finpost-learn-first">4. What should finpost learn first?</a></li>
+<li><a href="#5-multi-gpu-options-for-this-repo">5. Multi-GPU options for this repo</a></li>
+<li><a href="#6-the-notebook-design-for-distributed-learning">6. The notebook design for distributed learning</a></li>
+<li><a href="#7-cloud-platform-recommendations">7. Cloud platform recommendations</a></li>
+<li><a href="#8-platform-decision-matrix">8. Platform decision matrix</a></li>
+<li><a href="#9-what-to-say-in-interviews">9. What to say in interviews</a></li>
+<li><a href="#10-sources">10. Sources</a></li></ol></nav>
+<h1 id="distributed-training-and-gpu-platform-guide">Distributed training and GPU platform guide</h1>
+<p>Status: active learning guide as of 2026-05-19.</p>
+<p>This document is the practical primer for the part of post-training roles that often sounds mysterious from the outside: multi-GPU training, sharding, distributed launchers, and cloud GPU platforms.</p>
+<p>The goal is not to become a cluster engineer overnight. The goal is to learn enough to run, debug, and explain a small distributed post-training experiment without pretending that every workload needs a cluster.</p>
+<h2 id="1-why-multi-gpu-matters-for-post-training-roles">1. Why multi-GPU matters for post-training roles</h2>
+<p>Many post-training jobs ask for distributed experience because production training is limited by memory, throughput, or both.</p>
+<p>Examples:</p>
+<ul>
+<li>Full fine-tuning a model can exceed one GPU's memory because parameters,</li>
+</ul>
+<p>gradients, optimizer states, and activations all consume memory.</p>
+<ul>
+<li>DPO/OPD can be memory-hungry because policy and reference models may both be</li>
+</ul>
+<p>present.</p>
+<ul>
+<li>GRPO can be sampling-hungry because each prompt needs a group of completions.</li>
+<li>Large rollout jobs can be throughput-bound even when training itself is small.</li>
+</ul>
+<p>The interview trap is thinking "multi-GPU" means one thing. It does not. It can mean data parallel training, parameter sharding, optimizer sharding, tensor parallel inference, multi-node networking, sharded checkpoints, or simply parallel rollout workers.</p>
+<h2 id="2-the-core-vocabulary">2. The core vocabulary</h2>
+<h3 id="rank">Rank</h3>
+<p>One training process in a distributed job. Usually one rank owns one GPU.</p>
+<h3 id="world-size">World size</h3>
+<p>The total number of ranks. A single machine with 4 GPUs usually runs world size 4.</p>
+<h3 id="process-group">Process group</h3>
+<p>The communication group used by ranks to exchange gradients, parameters, or other tensors.</p>
+<h3 id="all-reduce">All-reduce</h3>
+<p>The operation that combines gradients across ranks and gives every rank the same averaged result.</p>
+<h3 id="distributed-sampler">Distributed sampler</h3>
+<p>A sampler that gives each rank a different slice of the dataset so GPUs do not train on the same examples.</p>
+<h3 id="sharding">Sharding</h3>
+<p>Splitting model state across GPUs so no one GPU stores everything.</p>
+<h2 id="3-ddp-versus-fsdp-versus-deepspeed-zero">3. DDP versus FSDP versus DeepSpeed ZeRO</h2>
+<h3 id="distributeddataparallel">DistributedDataParallel</h3>
+<p>DDP replicates the model on every GPU. Each rank sees different data, computes gradients, and synchronizes gradients with the other ranks.</p>
+<p>Use DDP when:</p>
+<ul>
+<li>the model already fits on one GPU,</li>
+<li>you want more throughput,</li>
+<li>you can increase global batch size cleanly,</li>
+<li>checkpointing simplicity matters.</li>
+</ul>
+<p>Do not use DDP to solve memory if the model does not fit on one GPU. DDP replicates the model; it does not shard it.</p>
+<h3 id="fully-sharded-data-parallel">Fully Sharded Data Parallel</h3>
+<p>FSDP shards model parameters, gradients, and optimizer states across ranks. Each GPU stores only part of the training state and gathers what it needs during forward/backward.</p>
+<p>Use FSDP when:</p>
+<ul>
+<li>full fine-tuning or large adapter training is memory-bound,</li>
+<li>optimizer state is the bottleneck,</li>
+<li>you need to learn sharded checkpoint semantics,</li>
+<li>you are ready to debug distributed state.</li>
+</ul>
+<p>FSDP is the most educational sharding path for this repo because PyTorch and Hugging Face Accelerate expose it directly.</p>
+<h3 id="deepspeed-zero">DeepSpeed ZeRO</h3>
+<p>DeepSpeed ZeRO is another family of state-sharding techniques:</p>
+<ul>
+<li>Stage 1 shards optimizer states.</li>
+<li>Stage 2 shards optimizer states and gradients.</li>
+<li>Stage 3 shards optimizer states, gradients, and parameters.</li>
+</ul>
+<p>Use ZeRO when:</p>
+<ul>
+<li>a framework stack already expects DeepSpeed,</li>
+<li>you want mature configuration-driven scaling,</li>
+<li>you need ZeRO-2/3 behavior and are comfortable with DeepSpeed's checkpointing</li>
+</ul>
+<p>model.</p>
+<p>For this project, learn FSDP first and map it to ZeRO after. Hugging Face Accelerate documents the mapping: FSDP <code>FULL_SHARD</code> corresponds to ZeRO-3, <code>SHARD_GRAD_OP</code> corresponds to ZeRO-2, and <code>NO_SHARD</code> corresponds to normal DDP.</p>
+<h2 id="4-what-should-finpost-learn-first">4. What should finpost learn first?</h2>
+<p>Do not distributed-train the main FinChain model first.</p>
+<p>The right ladder:</p>
+<ol>
+<li>Run the single-GPU 3B/4B LoRA path.</li>
+<li>Run <code>notebooks/finchain_06_distributed_training_lab.ipynb</code> on a toy model.</li>
+<li>Prove DDP equivalence: one GPU global batch N versus two GPUs local batch N/2.</li>
+<li>Prove FSDP mechanics on a tiny transformer.</li>
+<li>Add Accelerate config files only after the toy lab works.</li>
+<li>Move the FinChain SFT/OPD loop to distributed only if the bottleneck is real.</li>
+</ol>
+<p>Why:</p>
+<ul>
+<li>If the single-GPU experiment is unclear, multi-GPU makes it unclear faster.</li>
+<li>Distributed bugs often look like ML bugs: divergent loss, hangs, broken</li>
+</ul>
+<p>checkpoint restore, duplicate examples, wrong effective batch.</p>
+<ul>
+<li>The learning value comes from isolating the distributed concept, not from</li>
+</ul>
+<p>immediately mixing it with FinChain, LoRA, DPO, and GRPO.</p>
+<h2 id="5-multi-gpu-options-for-this-repo">5. Multi-GPU options for this repo</h2>
+<h3 id="option-a-parallel-rollout-workers">Option A: parallel rollout workers</h3>
+<p>This is the easiest useful scaling path.</p>
+<p>Run multiple GPUs or machines that each generate completions for a shard of the prompt set. Merge the rollout JSONL files and verify centrally.</p>
+<p>Best for:</p>
+<ul>
+<li>OPD,</li>
+<li>GRPO data collection,</li>
+<li>model bake-offs,</li>
+<li>avoiding distributed-training complexity while still using multiple GPUs.</li>
+</ul>
+<p>Why it is underrated:</p>
+<ul>
+<li>Rollouts are embarrassingly parallel.</li>
+<li>Failed workers can be retried without corrupting optimizer state.</li>
+<li>It teaches cost accounting and cluster orchestration without forcing FSDP.</li>
+</ul>
+<h3 id="option-b-ddp-adapter-training">Option B: DDP adapter training</h3>
+<p>Use DDP when the model plus adapters fit on each GPU and you want throughput.</p>
+<p>Best for:</p>
+<ul>
+<li>LoRA SFT,</li>
+<li>LoRA DPO/OPD if policy/reference memory fits,</li>
+<li>experiments where global batch scaling is the main goal.</li>
+</ul>
+<p>Risk:</p>
+<ul>
+<li>Global batch changes learning dynamics. If local batch is 4 on 4 GPUs, global</li>
+</ul>
+<p>batch is 16 before gradient accumulation. The learning rate and number of optimizer steps need to be interpreted accordingly.</p>
+<h3 id="option-c-fsdp-full-fine-tuning">Option C: FSDP full fine-tuning</h3>
+<p>Use FSDP when memory is the actual problem.</p>
+<p>Best for:</p>
+<ul>
+<li>full fine-tuning a 3B/4B model,</li>
+<li>learning sharded checkpoints,</li>
+<li>understanding optimizer-state memory.</li>
+</ul>
+<p>Risk:</p>
+<ul>
+<li>It is easy to lose time to launch configs, checkpoint merging, and rank-local</li>
+</ul>
+<p>logging.</p>
+<h3 id="option-d-tensor-pipeline-parallelism">Option D: tensor/pipeline parallelism</h3>
+<p>Mostly out of scope for now.</p>
+<p>Use only when a single layer or activation path is too large for one GPU, or when you are serving/training models much larger than the current 3B/4B target.</p>
+<h2 id="6-the-notebook-design-for-distributed-learning">6. The notebook design for distributed learning</h2>
+<p>The distributed notebook should be an instructional lab, not a production launcher.</p>
+<p>Cells:</p>
+<ol>
+<li>Inspect GPUs, CUDA, NCCL, and environment variables.</li>
+<li>Explain rank/world-size with a drawing and printed examples.</li>
+<li>Run a CPU-only fake "rank split" to show how a distributed sampler works.</li>
+<li>If multiple GPUs are available, launch a tiny DDP script.</li>
+<li>Compare single-process and DDP loss/weights.</li>
+<li>Show what would change under FSDP.</li>
+<li>Print a checklist for moving the real trainer to Accelerate/FSDP.</li>
+</ol>
+<p>Visible outputs to include:</p>
+<ul>
+<li>rank id,</li>
+<li>local rank,</li>
+<li>world size,</li>
+<li>examples seen per rank,</li>
+<li>effective global batch,</li>
+<li>per-rank loss,</li>
+<li>gradient synchronization sanity check,</li>
+<li>checkpoint paths.</li>
+</ul>
+<h2 id="7-cloud-platform-recommendations">7. Cloud platform recommendations</h2>
+<h3 id="runpod">RunPod</h3>
+<p>Best use:</p>
+<ul>
+<li>notebook-first single-GPU work,</li>
+<li>A40/L40S/RTX 6000 Ada experiments,</li>
+<li>quick iteration with JupyterLab,</li>
+<li>cheap canaries.</li>
+</ul>
+<p>Strengths:</p>
+<ul>
+<li>broad GPU catalog,</li>
+<li>low friction for one-off pods,</li>
+<li>instant clusters now exist for multi-node jobs,</li>
+<li>good fit for "rent a 48GB GPU for a few hours."</li>
+</ul>
+<p>Weaknesses:</p>
+<ul>
+<li>availability can be frustrating,</li>
+<li>pod state and volumes require discipline,</li>
+<li>spot/interruptible instances are risky for training,</li>
+<li>multi-GPU is possible but adds platform and launch complexity.</li>
+</ul>
+<p>Recommendation:</p>
+<ul>
+<li>Keep RunPod as the notebook surface, but do not make it the only platform in</li>
+</ul>
+<p>the study.</p>
+<h3 id="lambda-cloud">Lambda Cloud</h3>
+<p>Best use:</p>
+<ul>
+<li>more conventional GPU VMs,</li>
+<li>stable boxes when available,</li>
+<li>cluster-shaped experiments if you can tolerate commitment/capacity friction.</li>
+</ul>
+<p>Strengths:</p>
+<ul>
+<li>clearer cloud posture,</li>
+<li>strong GPU focus,</li>
+<li>cluster products.</li>
+</ul>
+<p>Weaknesses:</p>
+<ul>
+<li>availability can be limited,</li>
+<li>some cluster pricing/commitment paths are less flexible than a cheap pod.</li>
+</ul>
+<p>Recommendation:</p>
+<ul>
+<li>Use Lambda when you want a cleaner VM or cluster story for a serious</li>
+</ul>
+<p>distributed test.</p>
+<h3 id="modal">Modal</h3>
+<p>Best use:</p>
+<ul>
+<li>batch rollout jobs,</li>
+<li>reproducible containerized experiments,</li>
+<li>job-shaped workloads rather than long interactive notebooks.</li>
+</ul>
+<p>Strengths:</p>
+<ul>
+<li>good developer ergonomics,</li>
+<li>easy GPU function declaration,</li>
+<li>supports multi-GPU containers for several GPU types,</li>
+<li>strong fit for repeatable rollout workers.</li>
+</ul>
+<p>Weaknesses:</p>
+<ul>
+<li>less natural for long exploratory notebook sessions,</li>
+<li>persistent interactive state is not the core model.</li>
+</ul>
+<p>Recommendation:</p>
+<ul>
+<li>Consider Modal for rollout generation once the prompt/verifier/cache contract</li>
+</ul>
+<p>is stable.</p>
+<h3 id="vast-ai">Vast.ai</h3>
+<p>Best use:</p>
+<ul>
+<li>cheapest possible GPU experiments,</li>
+<li>non-sensitive work,</li>
+<li>flexible marketplace exploration.</li>
+</ul>
+<p>Strengths:</p>
+<ul>
+<li>broad marketplace,</li>
+<li>often low prices,</li>
+<li>API-driven filtering.</li>
+</ul>
+<p>Weaknesses:</p>
+<ul>
+<li>host quality varies,</li>
+<li>storage/network details matter,</li>
+<li>debugging platform issues can eat the savings.</li>
+</ul>
+<p>Recommendation:</p>
+<ul>
+<li>Use Vast for cheap inference/rollout experiments after the runbook is robust,</li>
+</ul>
+<p>not for first-time distributed training.</p>
+<h2 id="8-platform-decision-matrix">8. Platform decision matrix</h2>
+<table>
+<thead><tr><th>Need</th><th>First choice</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Human notebook learning</td><td>RunPod 48GB pod</td><td>easiest interactive Jupyter surface</td></tr>
+<tr><td>Cheapest non-sensitive rollouts</td><td>Vast.ai</td><td>marketplace pricing, tolerate variability</td></tr>
+<tr><td>Reproducible rollout jobs</td><td>Modal</td><td>containerized job ergonomics</td></tr>
+<tr><td>Stable single GPU VM</td><td>Lambda or RunPod secure cloud</td><td>less marketplace variability</td></tr>
+<tr><td>First multi-GPU toy lab</td><td>single-node 2x/4x GPU on RunPod or Lambda</td><td>avoids multi-node networking first</td></tr>
+<tr><td>Serious multi-node test</td><td>RunPod Instant Clusters or Lambda cluster</td><td>needs high-speed networking and Slurm/launcher discipline</td></tr>
+</tbody></table>
+<h2 id="9-what-to-say-in-interviews">9. What to say in interviews</h2>
+<p>Good:</p>
+<blockquote><p>I learned distributed training by separating the concepts. First I used a</p></blockquote>
+<blockquote><p>single-GPU LoRA workflow. Then I built a toy distributed notebook to show DDP</p></blockquote>
+<blockquote><p>gradient synchronization and FSDP state sharding. Only after that would I move</p></blockquote>
+<blockquote><p>the FinChain trainer to multi-GPU, because otherwise I would not know whether a</p></blockquote>
+<blockquote><p>failure came from RLVR, data, or distributed state.</p></blockquote>
+<p>Better:</p>
+<blockquote><p>For this project, the first multi-GPU win is probably rollout parallelism, not</p></blockquote>
+<blockquote><p>FSDP. OPD and GRPO need many sampled completions; rollouts shard cleanly across</p></blockquote>
+<blockquote><p>GPUs and merge through a verifier. I would use FSDP only when training memory,</p></blockquote>
+<blockquote><p>not sampling throughput, is the actual bottleneck.</p></blockquote>
+<h2 id="10-sources">10. Sources</h2>
+<ul>
+<li>PyTorch DistributedDataParallel: https://docs.pytorch.org/docs/main/generated/torch.nn.parallel.DistributedDataParallel.html</li>
+<li>Hugging Face Accelerate FSDP: https://huggingface.co/docs/accelerate/main/en/usage_guides/fsdp</li>
+<li>DeepSpeed ZeRO: https://www.deepspeed.ai/tutorials/zero/</li>
+<li>RunPod Pods: https://docs.runpod.io/pods</li>
+<li>RunPod Instant Clusters: https://docs.runpod.io/instant-clusters</li>
+<li>Lambda GPU Cloud Pricing: https://lambda.ai/service/gpu-cloud/pricing</li>
+<li>Modal GPU docs: https://modal.com/docs/reference/modal.gpu</li>
+<li>Vast.ai: https://vast.ai/</li>
+</ul>
+</main>
+</body>
+</html>

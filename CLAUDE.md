@@ -6,6 +6,8 @@ This file orients Claude Code agents working in this repo.
 
 See [CONTEXT.md](./CONTEXT.md) for project intent, target capability, glossary, and explicit out-of-scope. All domain language used in tests, issues, and PRDs should match the `CONTEXT.md` glossary.
 
+Active direction as of 2026-05-19: FinChain-first RLVR. FinChain is the controlled verifier laboratory; FinQA/TAT-QA/FinanceBench-style tasks are transfer and realism checks. Qwen3-4B-Base with LoRA/QLoRA is the default serious model, Qwen2.5-0.5B remains the canary, and OPD/GRPO are the main next methods.
+
 ## Agent skills
 
 ### Issue tracker
@@ -24,6 +26,9 @@ Single-context. `CONTEXT.md` at the root; `docs/adr/` created lazily by `/grill-
 
 - [`docs/runbooks/phase1-training-runbook.md`](./docs/runbooks/phase1-training-runbook.md) — Phase 1 gate-by-gate procedure (local bootstrap → TinyGPT canary → Qwen SFT → DPO).
 - [`docs/runbooks/runpod-bootstrap.md`](./docs/runbooks/runpod-bootstrap.md) — first-time setup on a fresh RunPod pod. Covers the working-tree restore, the editable-install PEP 660 hook failure (write `.pth` by hand if `pip show finpost` succeeds but `import finpost` fails), and the torch / CUDA driver mismatch (pyproject pins `torch>=2.5` → pip pulls CUDA 13 wheel → RunPod A40 driver is CUDA 12.x → downgrade to `torch==2.4.1+cu124`). Read before sending the user through pod setup or debugging pod-side import errors.
+- [`docs/runbooks/finchain-rlvr-study-flow.md`](./docs/runbooks/finchain-rlvr-study-flow.md) — active FinChain study flow.
+- [`STUDY.md`](./STUDY.md) / [`STUDY.html`](./STUDY.html) — professor-style study guide and honest FinChain critique.
+- [`docs/distributed-training-and-platforms.md`](./docs/distributed-training-and-platforms.md) — multi-GPU, sharding, and platform guide.
 
 ## Known accepted behaviors
 

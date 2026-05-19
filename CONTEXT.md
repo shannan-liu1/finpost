@@ -1,79 +1,129 @@
 # Context: finpost
 
-A learning project to internalize the fundamentals of language-model post-training by applying them to financial reasoning over published company filings. The canonical evaluation target is the FinQA benchmark (Chen et al., 2021) — multi-step numerical questions over S&P 500 annual and quarterly report excerpts. The financial domain is a forcing function for non-toy data, not a product target.
+`finpost` is a learning project for becoming fluent in modern language-model post-training by building the training loops, evaluation harnesses, and experiment artifacts directly. The active domain is financial numerical reasoning, but the product is the learning artifact: notebooks, study guides, runbooks, and results that make the user credible when discussing supervised fine-tuning, preference learning, and reinforcement learning with verifiable rewards.
 
-## Project intent
+The active benchmark direction is **FinChain-first**. FinChain is a symbolic financial reasoning benchmark with executable chains and deterministic answer verification. It is a better primary substrate than FinQA for the next phase because it gives us dense, cheap, programmatic reward signals for Reinforcement Learning with Verifiable Rewards (RLVR). FinQA remains valuable as a transfer and realism check, not as the main training surface.
 
-- **Primary goal (~70%):** Learn the fundamentals of post-training at a deep level — including the working vocabulary used by practitioners. No abbreviations in documentation; spell out terms on first use.
-- **Secondary goal (~30%):** Produce a credible artifact in the financial-reasoning domain that reflects the user's background and interest in finance, distinguishing this work from a generic benchmark project. The concrete target is measurable post-training improvement on the FinQA benchmark — a peer-reviewed dataset of numerical questions over real earnings reports — using the SFT, DPO, OPD, and GRPO methods built in this repo. FinQA replaces an earlier plan to self-compile a 10-K reasoning dataset: FinQA is already cleaned, has an official numeric-tolerance evaluation script, and has published baselines and a leaderboard for honest comparison.
-- **Success bar:** The evaluation harness shows a statistically defensible improvement on a clearly-scoped problem the user defined. Not: "an analyst would use this model."
-- **Phase 1 note:** GSM8K and MATH are the scaffolding the SFT and DPO pipelines were built and validated against. They are general numerical-reasoning benchmarks, not finance, and are retained as smoke-test sources for the trainer and verifier — not as the finance evaluation target. Finance evaluation runs against FinQA.
+## Project Intent
 
-## Target capability
+- **Primary goal (~70%):** Learn post-training fundamentals deeply enough to explain, implement, debug, and compare them in interviews. Documentation should spell out terms on first use, connect concepts to code, and distinguish controls from headline methods.
+- **Secondary goal (~30%):** Produce a credible finance-domain artifact. The final story should be: "I built a compute-aware RLVR study for financial reasoning, starting from small-model supervised fine-tuning and ending with verifier-driven OPD/GRPO comparisons under measured compute budgets."
+- **Success bar:** A reproducible study flow with notebooks, configs, cost ledgers, and a writeup that explains what improved, what failed, and why. Not: a production finance analyst model.
 
-The model is being post-trained to perform two related skills over a single filing excerpt (a passage of text together with an embedded table) provided as input context, matching the FinQA task structure:
+## Active Benchmark Ladder
 
-1. **Numerical extraction** — given an excerpt, return a specific figure asked about (e.g. "What was operating income for fiscal year 2023?"). Verified by exact numeric match or normalized-string match against ground truth.
-2. **Numerical reasoning over an excerpt** — given an excerpt, *compute* a derived quantity (year-over-year change, gross margin, segment contribution to total revenue). The model must identify the correct line items from the table or surrounding text *and* perform the arithmetic correctly. Verified programmatically using FinQA's numeric-equivalence-with-tolerance scoring.
+1. **FinChain as the primary RLVR substrate.** Use it for training and method comparison because examples include symbolic financial reasoning chains that can be executed or checked deterministically.
+2. **FinQA as the transfer benchmark.** Use it to test whether FinChain-trained behavior survives contact with messier real filing excerpts and table/text grounding.
+3. **TAT-QA or ConvFinQA as optional transfer checks.** Add one only after the FinChain -> FinQA result is clean.
+4. **FinanceBench or SEC filing retrieval as later work.** These are higher-friction, less verifier-clean, and not the minimum effective dose for learning RLVR.
 
-Explicitly out of scope for this project:
-- Open-ended analytical answers requiring qualitative judgment
-- Accounting-textbook problems (journal entries, statement preparation) divorced from a real filing
-- Cross-filing retrieval, reconciliation, or comparison
-- Reproducing FinQA's intermediate reasoning program (the DSL operator chain). The model is scored on the final answer only; the program is treated as a teacher artifact, not a training target.
+GSM8K and MATH remain infrastructure smoke tests for the trainer, verifier, and cost ledger. They are not the active finance benchmark.
+
+## Target Capability
+
+The model is being post-trained to perform verifiable financial numerical reasoning:
+
+1. **Formula selection:** identify the relevant financial relation, such as gross margin, year-over-year growth, debt-to-equity, or free cash flow.
+2. **Grounded computation:** select the correct values from the prompt context and execute the arithmetic.
+3. **Chain validity:** produce reasoning steps that can be checked against an executable symbolic chain or final numeric verifier.
+4. **Format discipline:** emit a parseable final answer so that evaluation failures reflect reasoning quality, not output-format drift.
+
+Explicitly out of scope:
+
+- Open-ended investment analysis or qualitative judgment
+- Cross-document retrieval and reconciliation
+- LLM-as-judge as the primary correctness signal
+- Full fine-tuning of 3B/4B models before LoRA/QLoRA baselines are exhausted
+- Large method/model grids whose results cannot be explained cleanly
+
+## Method Ladder
+
+The study intentionally separates controls from RLVR methods:
+
+1. **Base / few-shot evaluation:** establishes what the model already knows.
+2. **Supervised Fine-Tuning (SFT):** teaches format, domain vocabulary, and chain style from gold examples. This is the anchor, not the headline RL method.
+3. **Rejection SFT:** trains on verified-correct model generations. This is the cheapest self-improvement baseline.
+4. **Direct Preference Optimization (DPO):** trains on a fixed offline preference dataset. In this repo it is mainly a fundamentals and comparison artifact.
+5. **On-Policy Distillation (OPD):** builds DPO-style preference pairs from the current policy's own verified rollouts. This is the practical bridge between preference learning and RLVR.
+6. **Group Relative Policy Optimization (GRPO):** samples groups of completions, scores them with the verifier, normalizes rewards within each group, and updates the policy with KL control. This is the headline RLVR method for the FinChain phase.
+
+SFT and DPO are not themselves RLVR in the strict sense. OPD and GRPO are the more direct RLVR-shaped methods because their supervision comes from current-policy rollouts scored by a programmatic verifier.
+
+## Model And Hardware Posture
+
+- **Canary model:** keep `Qwen/Qwen2.5-0.5B` for CPU/local tests, notebook debugging, and cheap trainer regression checks.
+- **Default serious model:** use `Qwen/Qwen3-4B-Base` with LoRA or QLoRA for the main FinChain study. It is large enough to make finance reasoning non-trivial, small enough for a single 48GB GPU workflow, and modern enough to discuss credibly.
+- **Controlled fallback:** use `Qwen/Qwen2.5-3B-Base` if Qwen3 introduces avoidable tooling friction.
+- **Reference baselines:** optionally evaluate a strong instruct model such as Phi-3.5 Mini Instruct or Llama 3.2 3B, but do not make it the main train-from-base substrate.
+- **Normal GPU:** use one 48GB RunPod-class GPU such as A40, L40S, RTX 6000 Ada, or A6000 for LoRA/QLoRA, rollouts, OPD, and a first GRPO run.
+- **Cluster experiment:** use 2x or 4x A100/H100 only after a single-GPU study is reproducible. The cluster story should be about scaling rollout throughput and grouped RL updates, not rescuing an unclear experiment.
+
+## Final Artifact Shape
+
+The project should produce:
+
+- A FinChain dataset/eval notebook
+- A FinChain SFT notebook
+- A rollout/verifier/cache notebook
+- An OPD notebook
+- A GRPO notebook
+- A final comparison notebook with accuracy, pass@K, parseability, KL drift, rollout tokens, GPU-hours, and dollars
+- A study guide explaining SFT, DPO, OPD, PPO, GRPO, RLHF, RLVR, KL control, and reward hacking using this repo's code
 
 ## Glossary
 
-### Filing
-A document submitted by a registrant to the United States Securities and Exchange Commission via the EDGAR system. In this project, restricted to annual reports (Form 10-K) and quarterly reports (Form 10-Q). FinQA excerpts originate from such reports, preprocessed by the FinQA authors into the (text passage, table, question, answer) units the benchmark distributes.
+### FinChain
 
-### Filing excerpt
-A bounded slice of a filing (one section, one table, or a small group of related paragraphs) provided to the model as input context for a single task. The unit of grounding — every numerical answer must be traceable to the excerpt that was given. In FinQA, each excerpt is structured as a textual passage adjacent to a single embedded table; the model sees both.
+A financial symbolic reasoning benchmark with parameterized templates, generated examples, and executable reasoning chains. In this project, FinChain is the primary RLVR training and evaluation substrate because it gives deterministic final-answer and step-level verification.
 
 ### FinQA
-A benchmark dataset published by Chen et al. (2021, Stanford and JP Morgan) of multi-step numerical questions answered over excerpts from S&P 500 annual and quarterly reports. Each example provides a textual passage, an embedded table, a natural-language question, an intermediate reasoning program, and a single numeric ground-truth answer. The canonical finance evaluation target for this project. Final answer is scored using FinQA's numeric-tolerance evaluation; the intermediate reasoning program is not trained against or scored.
 
-### Numerical extraction
-The task of returning a single figure that appears verbatim in a filing excerpt. Distinguished from numerical reasoning by the absence of any arithmetic on the model's part.
+A financial question-answering benchmark over S&P 500 annual and quarterly report excerpts. FinQA remains a transfer benchmark for testing whether FinChain-trained reasoning generalizes to messier real filing contexts.
 
-### Numerical reasoning
-The task of computing a derived quantity from one or more figures present in a filing excerpt. Requires both correct selection of input line items and correct arithmetic.
+### Reinforcement Learning with Verifiable Rewards
 
-### Post-training
-Training performed after pretraining to make a base language model more useful for a target behavior. In this project, post-training includes supervised fine-tuning, On-Policy Distillation, Direct Preference Optimization, and later reinforcement-learning methods such as Group Relative Policy Optimization.
+A post-training setup where model completions are scored by an objective verifier rather than a human preference label or language-model judge. Abbreviated RLVR after first use.
+
+### Reinforcement Learning from Human Feedback
+
+A post-training setup where human preference data is used directly or through a learned reward model to improve model behavior. Abbreviated RLHF after first use.
 
 ### Supervised Fine-Tuning
-A post-training method that updates a model on prompt-response examples. The model is taught to imitate the provided response tokens, usually with loss applied only to the assistant response and not to the prompt. Abbreviated SFT after first use.
+
+A post-training method that updates a model on prompt-response examples. The model imitates the provided response tokens, usually with loss applied only to the assistant response. Abbreviated SFT after first use.
 
 ### Direct Preference Optimization
-A post-training method that updates a model from pairs of responses to the same prompt: one preferred response and one non-preferred response. It is used when the target behavior is easier to express as "response A is better than response B" than as one exact gold answer. Abbreviated DPO after first use.
 
-### Group Relative Policy Optimization
-A reinforcement-learning post-training method that samples multiple responses for the same prompt, scores each response with a reward function, and updates the policy based on each response's relative standing within the group. Abbreviated GRPO after first use.
-
-### Teacher distillation
-Using a larger or stronger model to produce training examples, labels, rationales, preference pairs, or grading signals for a smaller student model. In this project, teacher distillation is a data-generation technique, not a guarantee that the teacher output is true.
-
-### LLM as judge
-Using a language model to evaluate or compare generated answers. In this project, LLM-as-judge can help score faithfulness, citation quality, and answerability, but numerical answers and computations still require programmatic verification.
+A post-training method that updates a model from fixed pairs of responses to the same prompt: one preferred response and one non-preferred response. Abbreviated DPO after first use.
 
 ### On-Policy Distillation
-A post-training method that updates a model on preference pairs sampled from the current policy's own generations. For each prompt, the policy generates multiple completions; a programmatic verifier labels each as correct or incorrect; preferred (correct) and non-preferred (incorrect) completions are paired and fed through a Direct-Preference-Optimization-style pairwise loss. Distinguished from offline Direct Preference Optimization by the fact that the pair distribution tracks the current model rather than a fixed dataset. Abbreviated OPD after first use.
 
-### Compute-aware post-training
-A workflow philosophy that treats compute as an experimental variable rather than a sunk cost. Every post-training method is reported alongside its rollout cost, verifier cost, and training cost — measured in tokens, GPU-hours, and dollars — and improvements are scored per dollar and per GPU-hour, not only by accuracy. Inspired by the llm.c reproduction of GPT-2 (10B FineWeb tokens, ~90 minutes on 8×A100, ~$20).
+A post-training method that samples completions from the current policy, verifies them, builds chosen/rejected pairs, and applies a DPO-style pairwise loss. Abbreviated OPD after first use.
+
+### Group Relative Policy Optimization
+
+A reinforcement-learning method that samples multiple responses for the same prompt, scores each with a reward function, normalizes rewards within the group, and applies a KL-controlled policy update. Abbreviated GRPO after first use.
+
+### Proximal Policy Optimization
+
+A policy-gradient reinforcement-learning method that constrains each update so the new policy does not move too far from the old policy. PPO is foundational for understanding RLHF, even if this repo does not implement it first.
+
+### KL Control
+
+A penalty or constraint that discourages a trained policy from drifting too far from a reference policy. In this project, KL control is tracked because verifier rewards can be gamed by format hacks, shortcut reasoning, or distribution collapse.
 
 ### Rollout
-A batch of completions generated by a policy model for a fixed set of prompts. The unit of generation cost in this project. A rollout is parameterised by `(prompts, samples_per_prompt K, max_output_tokens, model_size)`. Rollout output is cached on disk so that downstream verification, bucketing, and preference-pair construction never trigger a regeneration unless the policy or sampling parameters change.
+
+A batch of completions generated by a policy model for a fixed prompt set. Rollouts are cached by model revision, prompt revision, and sampling parameters so verification and pair construction do not regenerate expensive samples.
 
 ### Verifier
-A function that takes a single model completion and returns a binary or graded correctness signal. In this project, verifiers are ordered cheapest-first — exact answer string match, symbolic or numeric equivalence, unit tests for code, then small local verifier model, then LLM-as-judge only for unresolved cases. The verifier is run on every completion in every rollout; verifier calls are counted as a first-class cost metric.
 
-### Difficulty bucket
-A coarse label assigned to a prompt based on the fraction of K rollout samples that the verifier marks correct. In this project the default buckets are `easy` (p_correct ≥ 0.8), `ambiguous` (0.2 ≤ p_correct ≤ 0.8), and `hard` (p_correct < 0.2). The bucket controls how much additional rollout compute and how much preference-update weight a prompt receives.
+A deterministic or mostly deterministic function that scores a model completion. In this project the verifier should parse the final answer, execute or compare symbolic chains when available, and return correctness plus diagnostics.
 
-### Adaptive sampling
-A rollout strategy that draws a small initial number of samples per prompt (K=4), assigns a difficulty bucket, and then draws additional samples (e.g. K=12–28 extra) only for ambiguous prompts. Reduces total rollout tokens versus a uniform K while concentrating signal where the model is uncertain.
+### Difficulty Bucket
 
-### Cost ledger
-A per-run record that captures, in addition to accuracy, the rollout tokens generated, the number of verifier calls, the training tokens consumed, the wall-clock GPU-hours, the estimated dollar cost, and the derived ratios `accuracy / dollar` and `accuracy / GPU-hour`. The cost ledger is the headline reporting surface for compute-aware post-training.
+A label assigned to a prompt based on the fraction of K rollout samples that verify as correct. Default buckets are `easy`, `ambiguous`, and `hard`. Ambiguous prompts are usually the highest-value prompts for additional sampling and preference updates.
+
+### Cost Ledger
+
+A per-run record of rollout tokens, verifier calls, training tokens, wall-clock GPU-hours, estimated dollars, parseability, accuracy, and accuracy per cost unit. The cost ledger is a first-class result, not bookkeeping after the fact.

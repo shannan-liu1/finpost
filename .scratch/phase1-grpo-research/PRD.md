@@ -1,6 +1,6 @@
 # Group Relative Policy Optimization research track for verifiable numerical reasoning
 
-- **Status:** Not Started
+- **Status:** Superseded by [`finchain-rlvr-posttraining`](../finchain-rlvr-posttraining/PRD.md)
 - **Created:** 2026-05-08
 - **Owner:** Shannan
 - **Estimated time:** 3-5 days for research/design, 1-2 weeks for a first toy implementation after SFT and DPO land
@@ -11,6 +11,12 @@
 Define a future Group Relative Policy Optimization (GRPO) research track that can extend the Qwen 0.5B post-training stack after Supervised Fine-Tuning and Direct Preference Optimization are implemented and evaluated.
 
 This workstream exists to preserve the idea without letting it distort the current trainer scope. GRPO is post-training, but it is not a drop-in replacement for Supervised Fine-Tuning or Direct Preference Optimization.
+
+## Amendment 2026-05-19: Superseded by FinChain RLVR path
+
+The original Qwen 0.5B GRPO research track is no longer the active direction. The useful ideas here - verifier rewards, grouped samples, normalized advantages, and KL logging - move into [`finchain-rlvr-posttraining`](../finchain-rlvr-posttraining/PRD.md), where FinChain provides a cleaner symbolic-reasoning reward substrate and a 3B/4B model gives a more credible finance result.
+
+Keep this PRD as background only. New GRPO implementation work should start from the FinChain PRD and [`docs/runbooks/finchain-rlvr-study-flow.md`](../../docs/runbooks/finchain-rlvr-study-flow.md).
 
 ## Scope
 

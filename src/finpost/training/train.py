@@ -164,6 +164,8 @@ def print_effective_config(config: Config, *, stream: IO[str] | None = None) -> 
         f"  per_device_batch_size:  {config.training.per_device_batch_size}",
         f"  grad_accum_steps:       {config.training.grad_accum_steps}",
         f"  effective batch size:   {effective_batch}",
+        f"  dataloader_num_workers: {config.training.dataloader_num_workers}",
+        f"  pin_memory:             {config.training.pin_memory}",
         f"  max_seq_len:            {config.packing.max_seq_len}",
         f"  save_dir:               {config.checkpointing.save_dir}",
         f"  resume_from:            {config.checkpointing.resume_from}",

@@ -112,6 +112,7 @@ def _seed_everything(seed: int) -> None:
         # only seeds the current device. Cheap to call even when there
         # is just one GPU; harmless when there are zero.
         torch.cuda.manual_seed_all(seed)
+        torch.set_float32_matmul_precision("high")
     np.random.seed(seed)
     random.seed(seed)
 
@@ -438,13 +439,13 @@ class Trainer:
         # method that recurses; iterating explicitly avoids surprising
         # the reader and keeps the ``document_boundaries`` list (which
         # is a Python object, not a tensor) on the host.
-        input_ids = batch["input_ids"].to(self.device)
-        labels = batch["labels"].to(self.device)
+        input_ids = batch["input_ids"].to(self.device, non_blocking=True)
+        labels = batch["labels"].to(self.device, non_blocking=True)
         # Collator emits int64 attention_mask; PyTorch's SDPA path
         # requires bool or float masks. Cast to bool explicitly: True
         # means "attend here", False means "block".
-        attention_mask = batch["attention_mask"].to(self.device).bool()
-        position_ids = batch["position_ids"].to(self.device)
+        attention_mask = batch["attention_mask"].to(self.device, non_blocking=True).bool()
+        position_ids = batch["position_ids"].to(self.device, non_blocking=True)
 
         outputs = self.model(
             input_ids=input_ids,

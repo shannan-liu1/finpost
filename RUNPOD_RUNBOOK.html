@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>finpost — RunPod runbook</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        primaryColor: "#eef3fb",
+        primaryBorderColor: "#3a5a8a",
+        primaryTextColor: "#0a1628",
+        lineColor: "#3a5a8a",
+        secondaryColor: "#fff5e1",
+        tertiaryColor: "#f0f4ec",
+        fontFamily: "Inter, system-ui, sans-serif",
+      },
+      flowchart: { htmlLabels: true, curve: "basis" },
+    });
+  });
+</script>
+<style>
+  :root {
+    --bg: #fbfbfa;
+    --fg: #1a1f2c;
+    --muted: #5a6577;
+    --accent: #2a4d80;
+    --accent-soft: #eef3fb;
+    --warn: #b86e00;
+    --warn-soft: #fff5e1;
+    --ok: #2f7d3a;
+    --ok-soft: #e9f5ec;
+    --danger: #b03a3a;
+    --danger-soft: #fbe9e9;
+    --laptop: #5a4daf;
+    --laptop-soft: #f0eefb;
+    --pod: #1f7a8c;
+    --pod-soft: #e5f3f6;
+    --border: #d8dde6;
+    --code-bg: #f3f4f7;
+    --max-width: 960px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: Inter, -apple-system, system-ui, "Segoe UI", sans-serif;
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 6rem;
+  }
+  header.page {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  header.page h1 { margin: 0 0 0.4rem; font-size: 1.9rem; letter-spacing: -0.01em; }
+  header.page .lede { color: var(--muted); margin: 0; font-size: 1.05rem; }
+  h2 {
+    margin: 2.5rem 0 1rem;
+    font-size: 1.4rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.4rem;
+  }
+  h3 { margin: 1.8rem 0 0.6rem; font-size: 1.1rem; }
+  h4 { margin: 1.2rem 0 0.5rem; font-size: 0.98rem; color: var(--accent); }
+
+  code {
+    background: var(--code-bg);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.88em;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 0.85rem 1rem;
+    border-radius: 5px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-size: 0.85rem;
+    margin: 0.6rem 0;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted currentColor; }
+  a:hover { border-bottom-style: solid; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+  /* TOC */
+  nav.toc {
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.3rem;
+    margin: 1.5rem 0 2rem;
+  }
+  nav.toc h2 {
+    margin: 0 0 0.6rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border: none;
+    color: var(--accent);
+  }
+  nav.toc ol { margin: 0; padding-left: 1.3rem; }
+  nav.toc li { font-size: 0.93rem; margin: 0.2rem 0; }
+
+  /* Step header with location tag */
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 2rem 0 0.8rem;
+    padding: 0.6rem 0.9rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+  .step-header .num {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 2rem;
+  }
+  .step-header .title { font-size: 1.15rem; font-weight: 600; flex: 1; }
+  .step-header .loc {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.2rem 0.6rem;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .step-header .loc.laptop {
+    background: var(--laptop-soft);
+    color: var(--laptop);
+    border: 1px solid var(--laptop);
+  }
+  .step-header .loc.pod {
+    background: var(--pod-soft);
+    color: var(--pod);
+    border: 1px solid var(--pod);
+  }
+  .step-header .loc.web {
+    background: var(--warn-soft);
+    color: var(--warn);
+    border: 1px solid var(--warn);
+  }
+
+  /* Callouts */
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 0.75rem 1rem;
+    border-radius: 0 4px 4px 0;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  .callout.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .callout.danger { border-color: var(--danger); background: var(--danger-soft); }
+  .callout.ok { border-color: var(--ok); background: var(--ok-soft); }
+  .callout-label {
+    display: inline-block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+    color: var(--muted);
+  }
+  .callout.warn .callout-label { color: var(--warn); }
+  .callout.danger .callout-label { color: var(--danger); }
+  .callout.ok .callout-label { color: var(--ok); }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.7rem;
+    margin: 1rem 0;
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    background: white;
+  }
+  .card h4 { margin-top: 0; }
+
+  /* Tables */
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.92rem; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); font-weight: 600; }
+
+  /* Mermaid */
+  .mermaid {
+    text-align: center;
+    margin: 1.5rem 0;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+  }
+
+  .note { color: var(--muted); font-size: 0.88em; font-style: italic; }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: 0.15rem 0; }
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="page">
+  <h1>finpost — RunPod runbook</h1>
+  <p class="lede">Step-by-step guide for taking a local checkpoint through a RunPod A40 GPU session: upload to Hugging Face, provision pod, set up the workspace, smoke-test, run the real workload.</p>
+  <p class="note">Based on the actual session that produced <code>qwen_combined_hf_step_1000</code> + canary SFT run. Commands are copy-paste ready.</p>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#flow">Overall flow</a></li>
+    <li><a href="#prereq">Prerequisites</a></li>
+    <li><a href="#step1">Step 1 — Upload checkpoint to Hugging Face</a></li>
+    <li><a href="#step2">Step 2 — Start the RunPod</a></li>
+    <li><a href="#step3">Step 3 — Connect &amp; verify the GPU</a></li>
+    <li><a href="#step4">Step 4 — Clone repo &amp; install</a></li>
+    <li><a href="#step5">Step 5 — Verify the CLIs (<code>--help</code>)</a></li>
+    <li><a href="#step6">Step 6 — Run the tests</a></li>
+    <li><a href="#step7">Step 7 — Mini smoke test (tiny-gpt2 on GPU)</a></li>
+    <li><a href="#step8">Step 8 — Run the full workload</a></li>
+    <li><a href="#after">After: pull results &amp; stop the pod</a></li>
+    <li><a href="#gotchas">Gotchas observed in practice</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<section id="flow">
+<h2>Overall flow</h2>
+
+<p>Three locations of work — your laptop, the RunPod web console, and the pod itself. Knowing which one you're on at any moment is half the battle.</p>
+
+<div class="mermaid">
+flowchart TD
+    L1["💻 LAPTOP<br/>Upload checkpoint folder to<br/>Hugging Face Hub"] --> W1
+    W1["🌐 RUNPOD CONSOLE<br/>Deploy A40 on-demand pod<br/>(PyTorch 2.4 template,<br/>20 GB container + 20 GB volume)"] --> P1
+    P1["☁️ POD<br/>nvidia-smi check"] --> P2
+    P2["☁️ POD<br/>git clone + venv + pip install -e .[dev]"] --> P3
+    P3["☁️ POD<br/>--help on train + eval CLIs"] --> P4
+    P4["☁️ POD<br/>pytest (45+ pass, 1 known CUDA failure)"] --> P5
+    P5["☁️ POD<br/>hf auth login + hf download checkpoint"] --> P6
+    P6["☁️ POD<br/>Smoke test: tiny-gpt2 on CUDA<br/>~30 s, ~$0.004"] --> P7
+    P7["☁️ POD<br/>Full workload (eval and/or training)<br/>10 min – several hours"] --> L2
+    L2["💻 LAPTOP<br/>scp results back"] --> W2
+    W2["🌐 RUNPOD CONSOLE<br/>Stop Pod (or Terminate)"]
+    style L1 fill:#f0eefb,stroke:#5a4daf
+    style L2 fill:#f0eefb,stroke:#5a4daf
+    style W1 fill:#fff5e1,stroke:#b86e00
+    style W2 fill:#fff5e1,stroke:#b86e00
+    style P1 fill:#e5f3f6,stroke:#1f7a8c
+    style P2 fill:#e5f3f6,stroke:#1f7a8c
+    style P3 fill:#e5f3f6,stroke:#1f7a8c
+    style P4 fill:#e5f3f6,stroke:#1f7a8c
+    style P5 fill:#e5f3f6,stroke:#1f7a8c
+    style P6 fill:#e5f3f6,stroke:#1f7a8c
+    style P7 fill:#e5f3f6,stroke:#1f7a8c
+</div>
+
+<div class="callout warn">
+  <div class="callout-label">Cost framing</div>
+  An A40 on-demand pod bills ~$0.44/hr = ~$0.007/minute. Setup + smoke + eval = ~$0.10. A full Phase 1 SFT run is ~$1. Every minute of debugging is real money — favour scp over slow web uploads, and stop the pod the moment you're done.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="prereq">
+<h2>Prerequisites</h2>
+
+<table>
+  <thead>
+    <tr><th>Item</th><th>Where</th><th>How</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>RunPod account with billing</td><td>runpod.io</td><td>Sign up + add payment method</td></tr>
+    <tr><td>Hugging Face account</td><td>huggingface.co</td><td>Sign up</td></tr>
+    <tr><td>HF token (Write scope)</td><td><a href="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a></td><td>Create new token → type <strong>Write</strong> → copy</td></tr>
+    <tr><td>SSH key pair (for scp later)</td><td>Laptop</td><td><code>ssh-keygen -t ed25519</code>; add <code>~/.ssh/id_ed25519.pub</code> in RunPod → Settings → SSH Public Keys</td></tr>
+    <tr><td>Modern <code>hf</code> CLI (≥ 1.0)</td><td>Laptop</td><td><code>pip install -U huggingface_hub</code>; the binary is now <code>hf</code>, not <code>huggingface-cli</code></td></tr>
+    <tr><td>Local checkpoint (HF format)</td><td>Laptop</td><td>Directory containing <code>config.json</code>, tokenizer files, and <code>model.safetensors</code></td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================================ -->
+<section id="step1">
+<div class="step-header">
+  <div class="num">1.</div>
+  <div class="title">Upload the checkpoint to Hugging Face</div>
+  <div class="loc laptop">💻 Laptop</div>
+</div>
+
+<p>If your checkpoint is a <code>.zip</code>, unzip first — <code>hf upload</code> on a folder uploads each file individually; uploading the zip leaves you with a useless archive on the Hub.</p>
+
+<h4>If you have a zip</h4>
+<pre><code>cd $HOME\Documents\GitHub\finpost\results
+Expand-Archive -Path .\qwen_combined_hf_step_1000.zip -DestinationPath .\
+ls .\qwen_combined_hf_step_1000</code></pre>
+
+<p>The <code>ls</code> should show at minimum <code>config.json</code>, tokenizer files (e.g. <code>tokenizer.json</code>), and <code>model.safetensors</code>.</p>
+
+<h4>Log in with a write-scoped token</h4>
+<pre><code>hf auth login --force
+# Paste your Write token. Answer 'n' to git credential.
+hf auth whoami    # confirms your username (this is the namespace for uploads)</code></pre>
+
+<h4>Upload the folder</h4>
+<pre><code>hf upload &lt;your-username&gt;/finpost-sft-step-1000 `
+    "$HOME\Documents\GitHub\finpost\results\qwen_combined_hf_step_1000"</code></pre>
+
+<div class="callout">
+  <div class="callout-label">Why HF Hub and not direct scp?</div>
+  scp also works (see <a href="#gotchas">Gotchas</a>). Hub is preferred when: you want to share the checkpoint across machines, you might re-use it in a different pod later, or your laptop has weird egress restrictions to arbitrary pod IPs. For a one-shot eval, scp is faster.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="step2">
+<div class="step-header">
+  <div class="num">2.</div>
+  <div class="title">Start the RunPod</div>
+  <div class="loc web">🌐 Web Console</div>
+</div>
+
+<p>In <a href="https://www.runpod.io">runpod.io</a> → <strong>Pods → Deploy</strong>:</p>
+
+<table>
+  <thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><strong>GPU</strong></td><td>RTX A40 (1×)</td><td>48 GB VRAM, plenty for Qwen 0.5B. ~$0.44/hr on-demand. Community Cloud is cheaper but can be pre-empted.</td></tr>
+    <tr><td><strong>Template</strong></td><td><code>runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04</code></td><td>Pre-installed Python 3.11 + PyTorch + CUDA 12.4. Matches finpost's <code>pyproject.toml</code> requirements.</td></tr>
+    <tr><td><strong>Container disk</strong></td><td>20 GB</td><td>Ephemeral; holds venv + installed packages. Erased on stop.</td></tr>
+    <tr><td><strong>Volume disk</strong></td><td>20 GB at <code>/workspace</code></td><td>Persists across stop. Holds the repo, checkpoints, eval outputs.</td></tr>
+    <tr><td><strong>SSH terminal access</strong></td><td>✅ Enabled</td><td>Required for scp results back and for a usable terminal.</td></tr>
+    <tr><td><strong>Start Jupyter</strong></td><td>Optional</td><td>Costs the same whether on or off. Skip unless you need it.</td></tr>
+  </tbody>
+</table>
+
+<p>Click <strong>Deploy</strong>. Billing starts now.</p>
+
+<div class="callout warn">
+  <div class="callout-label">Pod name</div>
+  Name it for the workload (e.g. <code>eval-run-1</code> or <code>sft-canary</code>) rather than something generic. RunPod's history view sorts by name, and "Pod #4 from May 12" tells you nothing in two weeks.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="step3">
+<div class="step-header">
+  <div class="num">3.</div>
+  <div class="title">Connect and verify the GPU</div>
+  <div class="loc pod">☁️ Pod</div>
+</div>
+
+<p>RunPod console → <strong>Connect → Web Terminal</strong> (or SSH if your key is set up).</p>
+
+<pre><code>nvidia-smi</code></pre>
+
+<p>Expect one A40, ~48 GB free, CUDA 12.4. If you see anything else, terminate and re-deploy.</p>
+
+<div class="callout ok">
+  <div class="callout-label">What "healthy" looks like</div>
+  <pre style="margin: 0.4rem 0 0;"><code>+-----------------------------------+
+| NVIDIA A40       On  | 00000000:.. |
+|   0MiB / 46068MiB                  |
++-----------------------------------+</code></pre>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="step4">
+<div class="step-header">
+  <div class="num">4.</div>
+  <div class="title">Clone the repo and install</div>
+  <div class="loc pod">☁️ Pod</div>
+</div>
+
+<pre><code>cd /workspace
+git clone https://github.com/shannan-liu1/finpost.git
+cd finpost
+git log --oneline -1
+
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[dev]"
+
+python -c "import torch, finpost; \
+    print('finpost', finpost.__version__); \
+    print('torch', torch.__version__); \
+    print('cuda', torch.cuda.is_available()); \
+    print(torch.cuda.get_device_name(0))"</code></pre>
+
+<p>The Python one-liner should print:</p>
+
+<pre><code>finpost 0.0.1
+torch 2.11.0+cu130
+cuda True
+NVIDIA A40</code></pre>
+
+<div class="callout">
+  <div class="callout-label">Why "cu130" on a CUDA 12.4 host?</div>
+  PyTorch wheels bundle their own CUDA runtime. pip's resolver picks the newest compatible build; <code>cu130</code> works fine on a 12.4 host because the bundled runtime takes precedence. The <code>cuda True</code> + device name confirm it's wired up.
+</div>
+
+<div class="callout warn">
+  <div class="callout-label">Install time</div>
+  Expect 3–5 minutes for the first <code>pip install -e ".[dev]"</code> — <code>torch</code> alone is ~2 GB. Subsequent sessions on the same pod (with the volume disk) are much faster.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="step5">
+<div class="step-header">
+  <div class="num">5.</div>
+  <div class="title">Verify the CLIs exist (<code>--help</code>)</div>
+  <div class="loc pod">☁️ Pod</div>
+</div>
+
+<p>Cheap sanity check that the package imported correctly and the entry points work:</p>
+
+<pre><code>python -m finpost.training.train --help
+python -m finpost.evals.eval_exact --help</code></pre>
+
+<p>Both should print a usage block. If either errors, fix the install before continuing.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="step6">
+<div class="step-header">
+  <div class="num">6.</div>
+  <div class="title">Run the tests</div>
+  <div class="loc pod">☁️ Pod</div>
+</div>
+
+<p>Optional but reassuring — confirms the trainer and checkpoint code paths work on this hardware. Takes ~2 minutes.</p>
+
+<pre><code>python -m pytest tests/test_config.py tests/test_dataset.py tests/test_optim.py \
+    tests/test_checkpoint.py tests/test_trainer.py -q</code></pre>
+
+<div class="callout warn">
+  <div class="callout-label">Known failure on CUDA</div>
+  <code>test_checkpoint.py::test_save_then_load_round_trips_all_state</code> fails with <em>"Boolean value of Tensor with more than one value is ambiguous"</em>. This is a test-code bug — it uses Python <code>==</code> on a CUDA RNG state tensor instead of <code>torch.equal(...)</code>. The same test uses <code>torch.equal</code> for the regular RNG state two lines up. <strong>Not blocking</strong>: the eval CLI doesn't touch this code path. It only matters if you intend to resume a training run from a saved RNG state. Tracked for a future fix.
+</div>
+
+<p>Expected result: <code>45 passed, 1 failed</code> in ~2 minutes. As long as the only failure is the one above, proceed.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="step7">
+<div class="step-header">
+  <div class="num">7.</div>
+  <div class="title">Mini smoke test — tiny-gpt2 on GPU</div>
+  <div class="loc pod">☁️ Pod</div>
+</div>
+
+<p>Proves the eval pipeline runs end-to-end on this pod's CUDA before you spend on the real workload. ~30 s, ~$0.004.</p>
+
+<pre><code>python -m finpost.evals.eval_exact \
+    --checkpoints tiny=sshleifer/tiny-gpt2 \
+    --sources gsm8k \
+    --n 4 --seed 42 \
+    --out-dir results/evals/_pod_smoke \
+    --batch-size-gsm8k 2 \
+    --gpu-cost-per-hour 0.44 \
+    --device cuda</code></pre>
+
+<p>Verify:</p>
+
+<pre><code>cat results/evals/_pod_smoke/cost_summary.json</code></pre>
+
+<p>Sanity-check the JSON:</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Expect</th></tr></thead>
+  <tbody>
+    <tr><td><code>gpu_type</code></td><td><code>"NVIDIA A40"</code></td></tr>
+    <tr><td><code>dtype</code></td><td><code>"torch.bfloat16"</code> (A40 is Ampere; bf16 selected automatically)</td></tr>
+    <tr><td><code>generated_tokens &gt; 0</code></td><td>True</td></tr>
+    <tr><td><code>generated_tokens_decoded &gt; 0</code></td><td>True</td></tr>
+    <tr><td><code>estimated_cost_usd</code></td><td>≈ <code>elapsed_sec / 3600 × 0.44</code></td></tr>
+  </tbody>
+</table>
+
+<div class="callout danger">
+  <div class="callout-label">Stop here if smoke fails</div>
+  The real workload uses the same code path. If smoke crashes or produces garbage, fix it before spending real GPU time on the full run.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="step8">
+<div class="step-header">
+  <div class="num">8.</div>
+  <div class="title">Run the full workload</div>
+  <div class="loc pod">☁️ Pod</div>
+</div>
+
+<p>Two patterns shown — pick whichever matches your goal.</p>
+
+<h3>Pattern A — Evaluate base vs SFT (~10 min, ~$0.07)</h3>
+
+<p>First, pull the checkpoint you uploaded to HF Hub in step 1:</p>
+
+<pre><code>hf auth login
+# Paste your token (read scope is enough here)
+hf download &lt;your-username&gt;/finpost-sft-step-1000 \
+    --local-dir results/checkpoints/qwen_combined_hf_step_1000
+ls results/checkpoints/qwen_combined_hf_step_1000/</code></pre>
+
+<p>That <code>ls</code> must show <code>config.json</code> + tokenizer files + <code>model.safetensors</code>. Then run the eval:</p>
+
+<pre><code>python -m finpost.evals.eval_exact \
+    --checkpoints base=Qwen/Qwen2.5-0.5B combined=results/checkpoints/qwen_combined_hf_step_1000 \
+    --sources gsm8k math \
+    --n 500 --seed 42 \
+    --out-dir results/evals/base_vs_sft_run_1 \
+    --batch-size-gsm8k 16 --batch-size-math 8 \
+    --gpu-cost-per-hour 0.44 \
+    --device cuda</code></pre>
+
+<p>Inspect:</p>
+
+<pre><code>cat results/evals/base_vs_sft_run_1/accuracy_summary.csv
+cat results/evals/base_vs_sft_run_1/cost_summary.json
+ls results/evals/base_vs_sft_run_1/</code></pre>
+
+<p>Expect six files: <code>accuracy_summary.{json,csv}</code>, two <code>details_*.csv</code> per checkpoint per source, <code>run_metadata.json</code>, <code>cost_summary.json</code>.</p>
+
+<h3>Pattern B — Canary SFT (~3 min, ~$0.02)</h3>
+
+<p>A 60-step training canary on the real model. Proves the training path works on this hardware before committing to a multi-hour run.</p>
+
+<pre><code>export WANDB_MODE=offline
+python -m finpost.training.train \
+    --config experiments/colab_qwen_500m.yaml \
+    --device cuda \
+    --max-steps 60</code></pre>
+
+<p>Healthy signs at end of run:</p>
+<ul>
+  <li>Final <code>train/loss</code> noticeably below initial (e.g. 0.78 vs. ~8 at step 0)</li>
+  <li><code>train/grad_norm</code> finite (no NaN/Inf)</li>
+  <li><code>train/tokens_per_sec</code> in the thousands (~4k on A40 for Qwen 0.5B)</li>
+  <li>Checkpoint written to <code>results/checkpoints/&lt;run-name&gt;/step-00000060/</code></li>
+</ul>
+
+<div class="callout warn">
+  <div class="callout-label">Canary checkpoint is NOT HF format</div>
+  The trainer writes <code>model.safetensors</code> + <code>state.pt</code> — no <code>config.json</code> or tokenizer. The eval CLI needs HF format. To evaluate this checkpoint you'd need a conversion step (separate from this runbook). For the headline base-vs-SFT comparison, use a checkpoint that's already HF-formatted (e.g. one you uploaded via pattern A).
+</div>
+
+<h3>Pattern C — Full SFT training (1–3 h, ~$0.50–1.50)</h3>
+
+<p>Same as pattern B without the <code>--max-steps</code> override. Use the YAML's full <code>max_steps</code>. Tail the run via wandb (offline) or watch stdout. After it completes:</p>
+
+<pre><code># If you want to keep it, push the trained checkpoint to HF Hub
+hf upload &lt;your-username&gt;/finpost-sft-full-v1 \
+    results/checkpoints/&lt;run-name&gt;/step-&lt;final&gt;/</code></pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="after">
+<div class="step-header">
+  <div class="num">9.</div>
+  <div class="title">Pull results back &amp; stop the pod</div>
+  <div class="loc laptop">💻 Laptop</div>
+  <div class="loc web">🌐 Console</div>
+</div>
+
+<h4>Pull eval results (small, &lt; 1 MB)</h4>
+
+<p>On your <strong>laptop</strong>. Get <code>&lt;port&gt;</code> and <code>&lt;pod-ip&gt;</code> from RunPod → Connect → SSH over exposed TCP.</p>
+
+<pre><code>mkdir $HOME\Documents\GitHub\finpost\results\evals -Force
+scp -r -P &lt;port&gt; -i $HOME\.ssh\id_ed25519 `
+    root@&lt;pod-ip&gt;:/workspace/finpost/results/evals/base_vs_sft_run_1 `
+    $HOME\Documents\GitHub\finpost\results\evals\</code></pre>
+
+<h4>Push trained checkpoints to HF Hub (if any)</h4>
+
+<p>On the <strong>pod</strong>:</p>
+
+<pre><code>hf upload &lt;your-username&gt;/finpost-sft-pod-v1 \
+    results/checkpoints/&lt;run-name&gt;/step-&lt;final&gt;/</code></pre>
+
+<h4>Stop or terminate the pod</h4>
+
+<p>In RunPod console:</p>
+
+<ul>
+  <li><strong>Stop Pod</strong> — billing stops, volume disk persists. Use if you'll be back within a day or two.</li>
+  <li><strong>Terminate Pod</strong> — releases everything (volume too). Use when fully done with this checkpoint.</li>
+</ul>
+
+<div class="callout danger">
+  <div class="callout-label">Do not leave the pod running</div>
+  Idle pods bill the full GPU rate. The biggest waste in this whole workflow is a forgotten pod overnight ($10+) — set a phone reminder if needed.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="gotchas">
+<h2>Gotchas observed in practice</h2>
+
+<table>
+  <thead>
+    <tr><th>Symptom</th><th>What it means</th><th>Fix</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>huggingface-cli: error: invalid choice: 'upload'</code></td>
+      <td><code>huggingface_hub</code> older than 0.20</td>
+      <td><code>pip install -U huggingface_hub</code>; the binary is now <code>hf</code>, not <code>huggingface-cli</code></td>
+    </tr>
+    <tr>
+      <td><code>Warning: huggingface-cli is deprecated. Use hf instead.</code></td>
+      <td>CLI was renamed in <code>huggingface_hub</code> 1.0+</td>
+      <td>Use <code>hf &lt;subcommand&gt;</code>, not <code>huggingface-cli &lt;subcommand&gt;</code></td>
+    </tr>
+    <tr>
+      <td><code>transformers requires huggingface-hub&lt;1.0, but you have 1.14.0</code></td>
+      <td>Dep conflict on your laptop only</td>
+      <td>Ignore — for uploads you only need <code>hf</code>. If it bothers you later: <code>pip install -U transformers</code></td>
+    </tr>
+    <tr>
+      <td><code>403 Forbidden: You don't have the rights to create a model under the namespace "..."</code></td>
+      <td>Either the namespace isn't your account, or your token is read-only</td>
+      <td><code>hf auth whoami</code> to see your username. Regenerate token with <strong>Write</strong> scope. <code>hf auth login --force</code></td>
+    </tr>
+    <tr>
+      <td><code>httpx.ConnectError: WinError 10054</code> on <code>hf auth login</code></td>
+      <td>TLS connection killed mid-handshake (proxy / antivirus / ISP)</td>
+      <td>Retry once. If persistent, switch to scp path — see below</td>
+    </tr>
+    <tr>
+      <td><code>warmup_steps (50) must be &lt; max_steps (20)</code></td>
+      <td>CLI <code>--max-steps</code> override violates the YAML's warmup setting</td>
+      <td>Set <code>--max-steps</code> above the YAML's <code>warmup_steps</code>, or temporarily <code>sed</code> the YAML's warmup down</td>
+    </tr>
+    <tr>
+      <td><code>bash: ython: command not found</code></td>
+      <td>Typo or arrow-key history navigation munged the line</td>
+      <td>Retype the command. Avoid arrow-up history in xterm.js web terminals; copy-paste fresh</td>
+    </tr>
+    <tr>
+      <td>Eval refuses your training checkpoint</td>
+      <td>Trainer writes raw <code>state.pt</code> + <code>model.safetensors</code>; eval needs <code>config.json</code> + tokenizer too</td>
+      <td>Use a checkpoint that was saved in HF format (or write a conversion step)</td>
+    </tr>
+    <tr>
+      <td><code>Cannot paste in web terminal</code></td>
+      <td>xterm.js uses non-standard paste shortcuts</td>
+      <td>Ctrl+Shift+V (Win/Linux), Cmd+V (Mac), or right-click. Better: switch to SSH for real copy-paste</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>The scp alternative (if HF Hub keeps failing)</h3>
+
+<p>With SSH set up between laptop and pod, you skip the Hub entirely:</p>
+
+<pre><code># On your laptop — replace &lt;port&gt; and &lt;pod-ip&gt; with values from
+# RunPod console → Connect → SSH over exposed TCP
+scp -P &lt;port&gt; -i $HOME\.ssh\id_ed25519 `
+    "$HOME\Documents\GitHub\finpost\results\qwen_combined_hf_step_1000.zip" `
+    root@&lt;pod-ip&gt;:/workspace/finpost/results/checkpoints/</code></pre>
+
+<p>Then on the pod:</p>
+
+<pre><code>cd /workspace/finpost/results/checkpoints
+unzip qwen_combined_hf_step_1000.zip
+ls qwen_combined_hf_step_1000/   # must show config.json + model.safetensors</code></pre>
+
+<div class="callout">
+  <div class="callout-label">When to prefer scp vs HF Hub</div>
+  <ul style="margin: 0.4rem 0 0;">
+    <li><strong>scp</strong>: single-machine round-trip, &lt; ~5 GB, you have SSH set up</li>
+    <li><strong>HF Hub</strong>: you'll re-use the checkpoint across multiple pods/sessions, you want to share it, or your laptop egress can't reach arbitrary RunPod IPs</li>
+  </ul>
+</div>
+</section>
+
+<hr />
+
+<p class="note">Rendered from the session that produced the <code>step_1000</code> upload + canary SFT run. Update when the workflow changes (e.g. when the trainer learns to save HF-format checkpoints natively).</p>
+
+</div>
+</body>
+</html>

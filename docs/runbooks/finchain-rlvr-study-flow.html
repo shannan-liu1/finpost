@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>FinChain RLVR study flow</title>
+<style>
+:root {
+  color-scheme: light only;
+  --bg: #fbfbfa;
+  --fg: #18202f;
+  --muted: #5c6678;
+  --line: #d9dee7;
+  --panel: #ffffff;
+  --soft: #eef3fb;
+  --note: #fff8e6;
+  --ok: #236b3d;
+  --warn: #9a6200;
+  --bad: #9f3030;
+  --code: #f2f4f8;
+  --max: 1040px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.62 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+main { max-width: var(--max); margin: 0 auto; padding: 42px 24px 84px; }
+header { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 26px; }
+h1 { margin: 0 0 8px; font-size: 2.15rem; line-height: 1.12; letter-spacing: 0; }
+h2 { margin: 42px 0 14px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 1.45rem; }
+h3 { margin: 28px 0 10px; font-size: 1.12rem; }
+h4 { margin: 22px 0 8px; font-size: 1rem; color: #2a4d80; }
+p { margin: 0 0 14px; }
+ul, ol { margin: 0 0 16px 24px; padding: 0; }
+li { margin: 6px 0; }
+a { color: #244f86; text-decoration: none; border-bottom: 1px dotted currentColor; }
+a:hover { border-bottom-style: solid; }
+code {
+  background: var(--code);
+  border-radius: 4px;
+  padding: 0.12rem 0.28rem;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 0.9em;
+}
+pre {
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+pre code { background: transparent; padding: 0; }
+blockquote {
+  margin: 18px 0;
+  padding: 14px 18px;
+  border-left: 4px solid #2a4d80;
+  background: var(--soft);
+  border-radius: 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 700; }
+tr:last-child td { border-bottom: 0; }
+.toc {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 20px 0 34px;
+}
+.toc strong { display: block; margin-bottom: 8px; }
+.toc ol { margin-bottom: 0; columns: 2; }
+@media (max-width: 740px) { .toc ol { columns: 1; } main { padding: 30px 18px 70px; } }
+.meta { color: var(--muted); margin: 0; }
+.active-direction-banner {
+  border: 1px solid #d8c58a;
+  background: var(--note);
+  color: #4a3510;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 22px;
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>FinChain RLVR study flow</h1>
+<p class="meta">Rendered from <code>docs/runbooks/finchain-rlvr-study-flow.md</code>. Open offline in any browser.</p>
+</header>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#thesis">Thesis</a></li>
+<li><a href="#why-finchain">Why FinChain</a></li>
+<li><a href="#method-roles">Method Roles</a></li>
+<li><a href="#recommended-method-scope">Recommended Method Scope</a></li>
+<li><a href="#model-choice">Model Choice</a></li>
+<li><a href="#gpu-choice">GPU Choice</a></li>
+<li><a href="#study-flow">Study Flow</a></li>
+<li><a href="#study-guide-outline">Study Guide Outline</a></li>
+<li><a href="#interview-narrative">Interview Narrative</a></li>
+<li><a href="#practical-next-commands">Practical Next Commands</a></li></ol></nav>
+<h1 id="finchain-rlvr-study-flow">FinChain RLVR Study Flow</h1>
+<p>Status: active direction as of 2026-05-19.</p>
+<h2 id="thesis">Thesis</h2>
+<p>What would this look like if it were easy?</p>
+<p>It would be one clean study:</p>
+<blockquote><p>FinChain gives deterministic financial reasoning rewards. Use it to compare SFT, rejection SFT, OPD, and GRPO on one serious small model under a fixed compute budget, then test transfer on FinQA.</p></blockquote>
+<p>The project should produce artifacts that are easy to run, inspect, and explain:</p>
+<ul>
+<li>notebook outputs</li>
+<li>configs</li>
+<li>result tables</li>
+<li>cost ledgers</li>
+<li>failure examples</li>
+<li>a study guide connected to the implementation</li>
+</ul>
+<h2 id="why-finchain">Why FinChain</h2>
+<p>FinQA is a good finance benchmark, but it is not the easiest RLVR benchmark. It is realistic and messy, but the supervision is mostly final-answer numeric correctness over filing excerpts.</p>
+<p>FinChain is more useful for the next phase because:</p>
+<ul>
+<li>symbolic chains make verification cheaper and more diagnostic</li>
+<li>parameterized templates make it possible to analyze topic-level and formula-level failures</li>
+<li>generated examples let us create controlled train/test splits</li>
+<li>deterministic rewards make OPD and GRPO easier to debug</li>
+</ul>
+<p>The risk is template overfit. That is why FinQA stays in the plan as a transfer benchmark.</p>
+<h2 id="method-roles">Method Roles</h2>
+<h3 id="sft">SFT</h3>
+<p>Supervised Fine-Tuning teaches the model the response format, financial vocabulary, and chain style. It is the anchor baseline.</p>
+<p>Interview sentence:</p>
+<blockquote><p>SFT taught the model the task interface and reasoning trace format; it did not prove the model could improve from verified self-generated reasoning.</p></blockquote>
+<h3 id="dpo">DPO</h3>
+<p>Direct Preference Optimization is a fundamentals and comparator artifact. It teaches the pairwise preference loss and reference-policy framing.</p>
+<p>It is not the highest-leverage mainline FinChain path unless the OPD/GRPO results need a fixed offline preference comparator.</p>
+<p>Interview sentence:</p>
+<blockquote><p>I implemented DPO to understand preference optimization, but I did not make offline DPO the main finance experiment because FinChain gives a better on-policy verifier signal.</p></blockquote>
+<h3 id="rejection-sft">Rejection SFT</h3>
+<p>Rejection SFT trains on the model's own verified-correct completions. It is the simplest self-improvement baseline.</p>
+<p>Interview sentence:</p>
+<blockquote><p>Rejection SFT answered whether verified self-generated positives alone were enough before adding pairwise or RL updates.</p></blockquote>
+<h3 id="opd">OPD</h3>
+<p>On-Policy Distillation samples from the current policy, verifies completions, builds chosen/rejected pairs, and applies a DPO-style pairwise loss. This is the bridge method.</p>
+<p>It is promising because it reuses DPO mechanics while moving the data distribution on-policy.</p>
+<p>Interview sentence:</p>
+<blockquote><p>OPD was the practical bridge from DPO to RLVR: same pairwise math, but the pairs came from the current policy and a deterministic verifier.</p></blockquote>
+<h3 id="grpo">GRPO</h3>
+<p>Group Relative Policy Optimization samples a group of completions for each prompt, scores them with the verifier, normalizes rewards within the group, and applies a KL-controlled update.</p>
+<p>It is the most promising headline method because FinChain supplies exactly the kind of group-level verified rewards GRPO needs.</p>
+<p>Interview sentence:</p>
+<blockquote><p>GRPO was the clean RLVR experiment: grouped rollouts, verifier rewards, relative advantages, and KL control against a reference policy.</p></blockquote>
+<h2 id="recommended-method-scope">Recommended Method Scope</h2>
+<p>Do not do all methods equally deeply.</p>
+<p>Minimum effective dose:</p>
+<ol>
+<li>Base / few-shot</li>
+<li>SFT</li>
+<li>Rejection SFT</li>
+<li>Adaptive OPD</li>
+<li>One GRPO run</li>
+</ol>
+<p>Optional if time:</p>
+<ul>
+<li>fixed offline DPO as comparator</li>
+<li>uniform OPD as an ablation against adaptive OPD</li>
+<li>FinQA transfer after the FinChain result is clean</li>
+</ul>
+<p>Cut for now:</p>
+<ul>
+<li>PPO implementation</li>
+<li>KTO/ORPO detours</li>
+<li>broad DPO sweeps</li>
+<li>7B+ training before the 4B study works</li>
+</ul>
+<h2 id="model-choice">Model Choice</h2>
+<p>Default serious model:</p>
+<ul>
+<li><code>Qwen/Qwen3-4B-Base</code></li>
+</ul>
+<p>Why:</p>
+<ul>
+<li>modern enough to discuss credibly</li>
+<li>small enough for one 48GB GPU with LoRA/QLoRA</li>
+<li>base model gives a clean post-training story</li>
+<li>Qwen family continuity with the existing 0.5B work</li>
+</ul>
+<p>Fallback:</p>
+<ul>
+<li><code>Qwen/Qwen2.5-3B-Base</code></li>
+</ul>
+<p>Use it if Qwen3 support, tokenizer behavior, or dependency churn slows down the experiment.</p>
+<p>Canary:</p>
+<ul>
+<li><code>Qwen/Qwen2.5-0.5B</code></li>
+</ul>
+<p>Use it for local and notebook debugging, not as the serious finance result.</p>
+<p>Reference-only candidates:</p>
+<ul>
+<li>Phi-3.5 Mini Instruct</li>
+<li>Llama 3.2 3B Instruct</li>
+</ul>
+<p>These can be evaluated for context, but they should not become the main train-from-base path unless they clearly dominate and the licensing/tooling story is acceptable.</p>
+<h2 id="gpu-choice">GPU Choice</h2>
+<p>Default:</p>
+<ul>
+<li>one 48GB GPU on RunPod or similar</li>
+<li>A40 is acceptable</li>
+<li>L40S or RTX 6000 Ada is preferred if the price/performance is close</li>
+<li>A6000 or L40 are viable</li>
+</ul>
+<p>Why:</p>
+<ul>
+<li>enough memory for 3B/4B LoRA/QLoRA</li>
+<li>enough memory for rollout generation with moderate batch sizes</li>
+<li>simple enough that notebook iteration remains practical</li>
+</ul>
+<p>Avoid as the default:</p>
+<ul>
+<li>full fine-tuning a 3B/4B model with AdamW</li>
+<li>7B models before the 4B result is clean</li>
+<li>multi-GPU setup before the single-GPU bottleneck is measured</li>
+</ul>
+<p>Cluster experiment:</p>
+<p>Use 2x or 4x A100/H100 only after the single-GPU run is reproducible and the scaling question is explicit:</p>
+<ul>
+<li>Does larger K improve GRPO accuracy per dollar?</li>
+<li>Does rollout throughput dominate total time?</li>
+<li>Does multi-GPU let us run a cleaner KL sweep without waiting days?</li>
+</ul>
+<h2 id="study-flow">Study Flow</h2>
+<h3 id="stage-0-freeze-the-sft-baseline">Stage 0: Freeze The SFT Baseline</h3>
+<p>Goal:</p>
+<p>Turn the existing SFT work into a finished artifact.</p>
+<p>Outputs:</p>
+<ul>
+<li>SFT ablation table</li>
+<li>short writeup</li>
+<li>example predictions</li>
+<li>statement that 0.5B is now the canary path</li>
+</ul>
+<p>What to learn:</p>
+<ul>
+<li>why more steps can hurt small models</li>
+<li>difference between parse score and exact-answer accuracy</li>
+<li>how to discuss overfit without overstating evidence</li>
+</ul>
+<h3 id="stage-1-finchain-dataset-and-verifier">Stage 1: FinChain Dataset And Verifier</h3>
+<p>Notebook:</p>
+<ul>
+<li><code>notebooks/finchain_00_dataset_and_verifier.ipynb</code></li>
+</ul>
+<p>Build:</p>
+<ul>
+<li>loader</li>
+<li>prompt formatter</li>
+<li>answer parser</li>
+<li>chain executor or checker</li>
+<li>corrupt-answer tests</li>
+<li>topic/template summaries</li>
+</ul>
+<p>Core checks:</p>
+<ul>
+<li>gold answers verify</li>
+<li>corrupted answers fail</li>
+<li>parse failures are separated from reasoning failures</li>
+</ul>
+<h3 id="stage-2-model-bake-off">Stage 2: Model Bake-Off</h3>
+<p>Notebook:</p>
+<ul>
+<li><code>notebooks/finchain_00_model_bakeoff.ipynb</code></li>
+</ul>
+<p>Run on 200-500 examples:</p>
+<ul>
+<li>Qwen3-4B-Base</li>
+<li>Qwen2.5-3B-Base</li>
+<li>optional reference instruct model</li>
+</ul>
+<p>Pick based on:</p>
+<ul>
+<li>accuracy</li>
+<li>parseability</li>
+<li>tokens/sec</li>
+<li>memory footprint</li>
+<li>failure modes</li>
+<li>tooling friction</li>
+</ul>
+<h3 id="stage-3-finchain-sft">Stage 3: FinChain SFT</h3>
+<p>Notebook:</p>
+<ul>
+<li><code>notebooks/finchain_01_sft_lora.ipynb</code></li>
+</ul>
+<p>Train:</p>
+<ul>
+<li>one LoRA or QLoRA SFT baseline</li>
+<li>no broad sweep</li>
+<li>fixed eval split</li>
+<li>early stopping or short checkpoints</li>
+</ul>
+<p>Report:</p>
+<ul>
+<li>train loss</li>
+<li>eval accuracy</li>
+<li>parseability</li>
+<li>examples before/after</li>
+<li>cost</li>
+</ul>
+<h3 id="stage-4-rollouts-buckets-cost-ledger">Stage 4: Rollouts, Buckets, Cost Ledger</h3>
+<p>Notebook:</p>
+<ul>
+<li><code>notebooks/finchain_02_rollouts_and_buckets.ipynb</code></li>
+</ul>
+<p>For each prompt:</p>
+<pre><code>sample K=4 completions
+verify each completion
+p_correct = correct / K
+
+if p_correct &gt;= 0.8:
+    bucket = easy
+    extra_samples = 0
+    train_weight = 0.25
+elif p_correct &lt;= 0.2:
+    bucket = hard
+    extra_samples = 0
+    train_weight = 0.5
+else:
+    bucket = ambiguous
+    extra_samples = 12
+    train_weight = 1.0</code></pre>
+<p>Report:</p>
+<ul>
+<li>bucket proportions</li>
+<li>rollout tokens</li>
+<li>verifier calls</li>
+<li>parse failures</li>
+<li>cost per prompt</li>
+</ul>
+<h3 id="stage-5-rejection-sft-and-opd">Stage 5: Rejection SFT And OPD</h3>
+<p>Notebook:</p>
+<ul>
+<li><code>notebooks/finchain_03_rejection_sft_and_opd.ipynb</code></li>
+</ul>
+<p>Run:</p>
+<ul>
+<li>rejection SFT from verified-correct samples</li>
+<li>uniform OPD</li>
+<li>adaptive OPD</li>
+</ul>
+<p>Compare:</p>
+<ul>
+<li>accuracy</li>
+<li>pass@K</li>
+<li>parseability</li>
+<li>KL/reference drift proxy</li>
+<li>cost</li>
+<li>examples where preference learning helped or hurt</li>
+</ul>
+<h3 id="stage-6-grpo">Stage 6: GRPO</h3>
+<p>Notebook:</p>
+<ul>
+<li><code>notebooks/finchain_04_grpo.ipynb</code></li>
+</ul>
+<p>Run one controlled experiment:</p>
+<ul>
+<li>one K</li>
+<li>one reward function</li>
+<li>one KL coefficient</li>
+<li>one learning rate</li>
+<li>one budget</li>
+</ul>
+<p>Watch:</p>
+<ul>
+<li>reward hacking</li>
+<li>answer-format collapse</li>
+<li>KL spikes</li>
+<li>parseability gains that do not improve true accuracy</li>
+<li>template/topic overfit</li>
+</ul>
+<h3 id="stage-7-transfer-and-writeup">Stage 7: Transfer And Writeup</h3>
+<p>Notebook:</p>
+<ul>
+<li><code>notebooks/finchain_05_transfer_and_writeup.ipynb</code></li>
+</ul>
+<p>Evaluate:</p>
+<ul>
+<li>base</li>
+<li>SFT</li>
+<li>rejection SFT</li>
+<li>OPD</li>
+<li>GRPO</li>
+</ul>
+<p>On:</p>
+<ul>
+<li>FinChain held-out split</li>
+<li>FinQA transfer subset</li>
+</ul>
+<p>Final table:</p>
+<pre><code>method | model | train examples | rollout tokens | GPU-hours | dollars | parseability | FinChain acc | FinQA acc | notes</code></pre>
+<h2 id="study-guide-outline">Study Guide Outline</h2>
+<p>The study guide should be implemented alongside notebooks, not after everything is done.</p>
+<p>Chapters:</p>
+<ol>
+<li>What post-training changes after pretraining</li>
+<li>SFT: token-level imitation</li>
+<li>DPO: pairwise preference learning with a reference policy</li>
+<li>OPD: DPO-style learning on current-policy verified rollouts</li>
+<li>PPO: why clipping and trust regions matter</li>
+<li>GRPO: grouped rewards without a separate critic</li>
+<li>RLHF versus RLVR</li>
+<li>KL control and reward hacking</li>
+<li>Verifier design for finance</li>
+<li>Cost-aware experiment design</li>
+<li>What the FinChain study taught</li>
+</ol>
+<p>Each chapter should link to the relevant notebook and code path.</p>
+<h2 id="interview-narrative">Interview Narrative</h2>
+<p>Short version:</p>
+<blockquote><p>I started with SFT to learn the training substrate, then moved to FinChain because it gave deterministic financial reasoning rewards. That let me compare rejection SFT, OPD, and GRPO under a fixed compute budget. The interesting part was not just final accuracy; it was how rollout difficulty, parseability, KL drift, and cost shaped which method was actually useful.</p></blockquote>
+<p>Longer version:</p>
+<blockquote><p>The project deliberately separates method learning from domain realism. FinChain is the controlled verifier-rich environment where I can debug RLVR. FinQA is the transfer check that tells me whether the behavior survives messier filing excerpts. That structure keeps the project practical while still finance-specific.</p></blockquote>
+<h2 id="practical-next-commands">Practical Next Commands</h2>
+<p>Local canary:</p>
+<pre><code>$env:WANDB_MODE = "offline"
+.venv\Scripts\python.exe -m finpost.training.train --config experiments/local_tiny_gpt2.yaml --device cpu</code></pre>
+<p>First implementation slice:</p>
+<pre><code>python -m pytest tests</code></pre>
+<p>Then build the FinChain loader, verifier, and notebook before spending GPU money.</p>
+</main>
+</body>
+</html>

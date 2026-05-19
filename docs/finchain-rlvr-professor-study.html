@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>finpost study guide: FinChain-first RLVR</title>
+<style>
+:root {
+  color-scheme: light only;
+  --bg: #fbfbfa;
+  --fg: #18202f;
+  --muted: #5c6678;
+  --line: #d9dee7;
+  --panel: #ffffff;
+  --soft: #eef3fb;
+  --note: #fff8e6;
+  --ok: #236b3d;
+  --warn: #9a6200;
+  --bad: #9f3030;
+  --code: #f2f4f8;
+  --max: 1040px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.62 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+main { max-width: var(--max); margin: 0 auto; padding: 42px 24px 84px; }
+header { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 26px; }
+h1 { margin: 0 0 8px; font-size: 2.15rem; line-height: 1.12; letter-spacing: 0; }
+h2 { margin: 42px 0 14px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 1.45rem; }
+h3 { margin: 28px 0 10px; font-size: 1.12rem; }
+h4 { margin: 22px 0 8px; font-size: 1rem; color: #2a4d80; }
+p { margin: 0 0 14px; }
+ul, ol { margin: 0 0 16px 24px; padding: 0; }
+li { margin: 6px 0; }
+a { color: #244f86; text-decoration: none; border-bottom: 1px dotted currentColor; }
+a:hover { border-bottom-style: solid; }
+code {
+  background: var(--code);
+  border-radius: 4px;
+  padding: 0.12rem 0.28rem;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 0.9em;
+}
+pre {
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+pre code { background: transparent; padding: 0; }
+blockquote {
+  margin: 18px 0;
+  padding: 14px 18px;
+  border-left: 4px solid #2a4d80;
+  background: var(--soft);
+  border-radius: 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 700; }
+tr:last-child td { border-bottom: 0; }
+.toc {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 20px 0 34px;
+}
+.toc strong { display: block; margin-bottom: 8px; }
+.toc ol { margin-bottom: 0; columns: 2; }
+@media (max-width: 740px) { .toc ol { columns: 1; } main { padding: 30px 18px 70px; } }
+.meta { color: var(--muted); margin: 0; }
+.active-direction-banner {
+  border: 1px solid #d8c58a;
+  background: var(--note);
+  color: #4a3510;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 22px;
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>finpost study guide: FinChain-first RLVR</h1>
+<p class="meta">Rendered from <code>STUDY.md</code>. Open offline in any browser.</p>
+</header>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#1-the-motivating-problem">1. The motivating problem</a></li>
+<li><a href="#2-honest-verdict-on-finchain">2. Honest verdict on FinChain</a></li>
+<li><a href="#3-fundamental-assumptions">3. Fundamental assumptions</a></li>
+<li><a href="#4-conventional-path-versus-the-weird-path">4. Conventional path versus the weird path</a></li>
+<li><a href="#5-the-opposite-direction-worth-considering">5. The opposite direction worth considering</a></li>
+<li><a href="#6-method-ladder">6. Method ladder</a></li>
+<li><a href="#7-notebook-sequence">7. Notebook sequence</a></li>
+<li><a href="#8-function-and-infrastructure-audit">8. Function and infrastructure audit</a></li>
+<li><a href="#9-multi-gpu-learning-path">9. Multi-GPU learning path</a></li>
+<li><a href="#10-platform-stance">10. Platform stance</a></li>
+<li><a href="#11-evidence-and-sources">11. Evidence and sources</a></li>
+<li><a href="#12-the-interview-story">12. The interview story</a></li></ol></nav>
+<h1 id="finpost-study-guide-finchain-first-rlvr">finpost study guide: FinChain-first RLVR</h1>
+<p>Status: active study guide as of 2026-05-19.</p>
+<p>This document is the human and agent learning map for <code>finpost</code>. The goal is not to collect post-training acronyms. The goal is to build a small, falsifiable research program that teaches the mechanics behind modern post-training roles: SFT, DPO, OPD, GRPO, RLVR, KL control, verifier design, cost accounting, and eventually multi-GPU sharding.</p>
+<p>The short version:</p>
+<blockquote><p>Use FinChain as a controlled wind tunnel for verifiable financial reasoning,</p></blockquote>
+<blockquote><p>then use FinQA/TAT-QA/FinanceBench-style tasks as transfer and realism checks.</p></blockquote>
+<p>That is a hypothesis, not a religion. FinChain is promising because it gives cheap executable rewards. It is risky because template-generated symbolic tasks can make models look more financially competent than they are. The study is designed around that tension.</p>
+<h2 id="1-the-motivating-problem">1. The motivating problem</h2>
+<p>Post-training is increasingly about turning a base model into a policy that does something specific under constraints. The hard part is not just "make accuracy go up." The hard part is deciding what signal is trustworthy enough to optimize.</p>
+<p>In finance, this matters immediately. Consider a model answering:</p>
+<blockquote><p>Revenue increased from 12.4B to 14.1B. What was the year-over-year growth rate?</p></blockquote>
+<p>A good answer is not merely fluent. It must:</p>
+<ol>
+<li>select the correct numbers,</li>
+<li>apply the correct formula,</li>
+<li>compute <code>(14.1 - 12.4) / 12.4</code>,</li>
+<li>format the final answer in a parseable way,</li>
+<li>avoid inventing a business story that the data did not support.</li>
+</ol>
+<p>This is exactly where many generic post-training examples are too soft. If a language-model judge says "looks good," you still may not know whether the arithmetic is true. If a static preference dataset says response A is better than response B, you may still not know whether your current policy is failing in the same way. If a leaderboard reports one aggregate accuracy number, you may not know whether the model learned finance, learned a template, or learned a parser trick.</p>
+<p>The repo's north star is therefore:</p>
+<blockquote><p>Build a verifier-driven post-training loop where every model update can be</p></blockquote>
+<blockquote><p>explained in terms of examples, rollouts, rewards, KL drift, and cost.</p></blockquote>
+<h2 id="2-honest-verdict-on-finchain">2. Honest verdict on FinChain</h2>
+<p>FinChain is the right next direction if the target is learning RLVR mechanics. It is not automatically the right final benchmark for finance.</p>
+<p>Why it is strong:</p>
+<ul>
+<li>It provides symbolic financial reasoning tasks with executable verification.</li>
+<li>It makes step-level or chain-level diagnostics possible, not just final-answer</li>
+</ul>
+<p>scoring.</p>
+<ul>
+<li>It is cheap enough to support rollouts, bucketing, rejection SFT, OPD, and</li>
+</ul>
+<p>GRPO without constantly spending on LLM judges.</p>
+<ul>
+<li>It creates a controlled environment where reward hacking and KL drift can be</li>
+</ul>
+<p>seen quickly.</p>
+<p>Why it is weak:</p>
+<ul>
+<li>It may overrepresent tidy symbolic reasoning and underrepresent messy filings.</li>
+<li>It may reward template recognition rather than robust financial grounding.</li>
+<li>It may let the project become elegant but detached from real-world finance QA.</li>
+<li>It is new enough that treating it as "proven" would be false rigor.</li>
+</ul>
+<p>The right language is:</p>
+<blockquote><p>FinChain is the controlled RLVR laboratory. FinQA, TAT-QA, and FinanceBench are</p></blockquote>
+<blockquote><p>realism checks.</p></blockquote>
+<p>That framing is what makes the path less trodden. The conventional move would be to chase a finance leaderboard, add a big model, and report final accuracy. The more useful move is to build the reward laboratory first, stress it, and only then ask whether the learned behavior transfers to real report excerpts.</p>
+<h2 id="3-fundamental-assumptions">3. Fundamental assumptions</h2>
+<p>The study rests on assumptions that must be tested, not waved through.</p>
+<h3 id="assumption-a-verifiable-rewards-are-more-useful-than-judge-rewards-here">Assumption A: verifiable rewards are more useful than judge rewards here</h3>
+<p>For financial arithmetic, deterministic verification should be the first reward source. LLM-as-judge can help with semantic answerability or explanation quality, but it should not be the primary truth source for numeric correctness.</p>
+<p>Failure mode:</p>
+<ul>
+<li>The model learns to satisfy a judge's style preferences while still computing</li>
+</ul>
+<p>the wrong value.</p>
+<p>Test:</p>
+<ul>
+<li>Corrupt numeric answers and chains; the verifier must reject them for the</li>
+</ul>
+<p>right reason.</p>
+<h3 id="assumption-b-synthetic-symbolic-tasks-can-teach-transferable-structure">Assumption B: synthetic symbolic tasks can teach transferable structure</h3>
+<p>FinChain may teach formulas, chain discipline, and parseable final answers. But transfer to FinQA is not guaranteed.</p>
+<p>Failure mode:</p>
+<ul>
+<li>FinChain accuracy rises while FinQA accuracy stays flat or gets worse.</li>
+</ul>
+<p>Test:</p>
+<ul>
+<li>Hold out templates/topics in FinChain, then run a small FinQA transfer eval</li>
+</ul>
+<p>after SFT, OPD, and GRPO.</p>
+<h3 id="assumption-c-on-policy-data-is-more-informative-than-static-pairs">Assumption C: on-policy data is more informative than static pairs</h3>
+<p>DPO teaches a crucial pairwise preference objective, but fixed offline pairs can be stale. OPD and GRPO are attractive because their training signal comes from the current policy's own failures.</p>
+<p>Failure mode:</p>
+<ul>
+<li>On-policy sampling becomes expensive noise if the verifier is weak or the model</li>
+</ul>
+<p>is too bad to generate useful variation.</p>
+<p>Test:</p>
+<ul>
+<li>Track easy/ambiguous/hard buckets. Ambiguous prompts should be the main source</li>
+</ul>
+<p>of useful preference and RL signal.</p>
+<h3 id="assumption-d-cost-is-part-of-the-result">Assumption D: cost is part of the result</h3>
+<p>Accuracy without GPU-hours and rollout tokens is not enough. A method that gains 1 point at 10x the cost may be worse for this project than a method that gains 0.5 points cheaply and is easy to explain.</p>
+<p>Failure mode:</p>
+<ul>
+<li>The project turns into a collection of expensive anecdotes.</li>
+</ul>
+<p>Test:</p>
+<ul>
+<li>Every notebook writes or updates a cost ledger.</li>
+</ul>
+<h2 id="4-conventional-path-versus-the-weird-path">4. Conventional path versus the weird path</h2>
+<h3 id="the-conventional-path">The conventional path</h3>
+<ol>
+<li>Pick a popular benchmark.</li>
+<li>Pick a model family.</li>
+<li>Run SFT.</li>
+<li>Run DPO or PPO because that is what the field talks about.</li>
+<li>Report accuracy.</li>
+</ol>
+<p>This is not useless. It teaches the outer shell of the workflow. But it often skips the part interviewers care about when they probe: why this reward, why this data distribution, why this update rule, why this compute budget, and what failed?</p>
+<h3 id="the-weird-but-effective-path">The weird but effective path</h3>
+<ol>
+<li>Start with a domain where the verifier is strong.</li>
+<li>Treat the benchmark as a wind tunnel, not the destination.</li>
+<li>Use small rollouts to map model uncertainty.</li>
+<li>Spend extra samples only on ambiguous prompts.</li>
+<li>Compare rejection SFT, OPD, and GRPO under the same rollout cache.</li>
+<li>Track KL/reference drift and parseability alongside accuracy.</li>
+<li>Only then test transfer on messier finance tasks.</li>
+</ol>
+<p>This is less common because it is less glamorous. It does not start with the largest model or the messiest dataset. It starts with measurement. That is the advantage.</p>
+<h2 id="5-the-opposite-direction-worth-considering">5. The opposite direction worth considering</h2>
+<p>The strongest critique of FinChain-first is that it may be too clean. If we took one step in the opposite direction, we would do <strong>evaluator-first finance</strong>:</p>
+<ol>
+<li>Do not train at first.</li>
+<li>Build a brutal evaluation harness over FinQA, TAT-QA, and a small</li>
+</ol>
+<p>FinanceBench-style open-source subset.</p>
+<ol>
+<li>Evaluate several base and instruct models.</li>
+<li>Catalog failure modes by retrieval, formula selection, arithmetic, unit</li>
+</ol>
+<p>conversion, and final-answer formatting.</p>
+<ol>
+<li>Only then choose a training dataset.</li>
+</ol>
+<p>This would be slower emotionally because it delays the fun part. It may be more scientifically honest if the central question is "what does finance reasoning actually require?" rather than "how do I learn RLVR?"</p>
+<p>My recommendation is a hybrid:</p>
+<ul>
+<li>Use FinChain to learn RLVR mechanics.</li>
+<li>Add a small evaluator-first realism gate before declaring any method win.</li>
+</ul>
+<p>That means the project can say:</p>
+<blockquote><p>I did not mistake a symbolic benchmark for finance. I used it as a controlled</p></blockquote>
+<blockquote><p>reward lab, then measured transfer.</p></blockquote>
+<h2 id="6-method-ladder">6. Method ladder</h2>
+<h3 id="base-few-shot">Base / few-shot</h3>
+<p>Purpose:</p>
+<ul>
+<li>Establish what the model already knows.</li>
+</ul>
+<p>What it teaches:</p>
+<ul>
+<li>Prompt sensitivity, parseability, and whether the base model already has</li>
+</ul>
+<p>enough formula knowledge to make training worthwhile.</p>
+<h3 id="sft">SFT</h3>
+<p>Purpose:</p>
+<ul>
+<li>Teach format, domain vocabulary, and reasoning trace style.</li>
+</ul>
+<p>Core idea:</p>
+<ul>
+<li>Minimize token-level cross entropy on gold responses.</li>
+</ul>
+<p>Risk:</p>
+<ul>
+<li>SFT can teach answer shape without improving reasoning. Your earlier SFT</li>
+</ul>
+<p>ablation already showed the kind of signal to watch: parse score can stay stable while exact accuracy degrades.</p>
+<h3 id="dpo">DPO</h3>
+<p>Purpose:</p>
+<ul>
+<li>Learn the pairwise preference objective and reference-policy framing.</li>
+</ul>
+<p>Core idea:</p>
+<ul>
+<li>Increase the log-probability margin between chosen and rejected completions</li>
+</ul>
+<p>relative to a frozen reference model.</p>
+<p>Risk:</p>
+<ul>
+<li>Fixed offline pairs can become stale. DPO is valuable for fundamentals, but it</li>
+</ul>
+<p>should not block OPD/GRPO on FinChain.</p>
+<h3 id="rejection-sft">Rejection SFT</h3>
+<p>Purpose:</p>
+<ul>
+<li>Test the cheapest verified self-training baseline.</li>
+</ul>
+<p>Core idea:</p>
+<ul>
+<li>Sample completions, keep verified-correct outputs, train on them as SFT data.</li>
+</ul>
+<p>Risk:</p>
+<ul>
+<li>It only learns from positives. It may miss information contained in near-misses.</li>
+</ul>
+<h3 id="opd">OPD</h3>
+<p>Purpose:</p>
+<ul>
+<li>Bridge DPO and RLVR.</li>
+</ul>
+<p>Core idea:</p>
+<ul>
+<li>Sample from the current policy, verify completions, build chosen/rejected</li>
+</ul>
+<p>pairs, and apply a DPO-style loss with optional difficulty weights.</p>
+<p>Why it is promising:</p>
+<ul>
+<li>It reuses DPO mechanics while making the data distribution on-policy.</li>
+</ul>
+<h3 id="grpo">GRPO</h3>
+<p>Purpose:</p>
+<ul>
+<li>Run a direct grouped RLVR update.</li>
+</ul>
+<p>Core idea:</p>
+<ul>
+<li>For each prompt, sample a group of completions, score each with the verifier,</li>
+</ul>
+<p>normalize rewards within the group, and update the policy with KL control.</p>
+<p>Why it is promising:</p>
+<ul>
+<li>FinChain gives exactly the kind of grouped verified reward signal GRPO needs.</li>
+</ul>
+<p>Risk:</p>
+<ul>
+<li>If the reward is too narrow, GRPO can optimize the parser instead of reasoning.</li>
+</ul>
+<h2 id="7-notebook-sequence">7. Notebook sequence</h2>
+<p>Existing notebooks to keep:</p>
+<ul>
+<li><code>notebooks/sft_phase1_runpod_ablation_2000.ipynb</code></li>
+<li><code>notebooks/dpo_phase1_runpod.ipynb</code></li>
+</ul>
+<p>New RLVR notebooks:</p>
+<ol>
+<li><code>notebooks/finchain_00_dataset_and_verifier.ipynb</code></li>
+<li><code>notebooks/finchain_00_model_bakeoff.ipynb</code></li>
+<li><code>notebooks/finchain_01_sft_lora.ipynb</code></li>
+<li><code>notebooks/finchain_02_rollouts_and_buckets.ipynb</code></li>
+<li><code>notebooks/finchain_03_rejection_sft_and_opd.ipynb</code></li>
+<li><code>notebooks/finchain_04_grpo.ipynb</code></li>
+<li><code>notebooks/finchain_05_transfer_and_writeup.ipynb</code></li>
+<li><code>notebooks/finchain_06_distributed_training_lab.ipynb</code></li>
+</ol>
+<p>Every notebook should have:</p>
+<ul>
+<li>a purpose cell,</li>
+<li>a hardware/cost pre-flight cell,</li>
+<li>a visible progress helper,</li>
+<li>a small dry run before the expensive run,</li>
+<li>a cost ledger update,</li>
+<li>representative examples,</li>
+<li>failure-mode notes,</li>
+<li>a final "what did we learn?" cell.</li>
+</ul>
+<p>The notebooks are not just wrappers around scripts. They are the lab surface. They should show enough intermediate state that a human can learn from each cell.</p>
+<h2 id="8-function-and-infrastructure-audit">8. Function and infrastructure audit</h2>
+<p>Current SFT strengths:</p>
+<ul>
+<li>explicit masked cross entropy,</li>
+<li>packed examples,</li>
+<li>checkpointing with RNG state,</li>
+<li>cheap CPU canary path,</li>
+<li>visible wandb metrics,</li>
+<li>NaN guards.</li>
+</ul>
+<p>Current SFT bottlenecks:</p>
+<ul>
+<li>document isolation currently uses a dense 4D attention mask,</li>
+<li>SFT DataLoader previously lacked configurable workers and pinned memory,</li>
+<li>no distributed launch path yet,</li>
+<li>no LoRA/QLoRA trainer path yet,</li>
+<li>no FlashAttention variable-length packed-attention path yet.</li>
+</ul>
+<p>Current DPO strengths:</p>
+<ul>
+<li>chosen/rejected batches are concatenated into one policy forward and one</li>
+</ul>
+<p>reference forward,</p>
+<ul>
+<li>tokenized preference cache avoids repeated tokenizer work,</li>
+<li>DPO has DataLoader worker and pinned-memory knobs.</li>
+</ul>
+<p>Current DPO bottlenecks:</p>
+<ul>
+<li>policy and reference both live on the same device, which is simple but memory</li>
+</ul>
+<p>expensive,</p>
+<ul>
+<li>reference logits are recomputed every step rather than precomputed,</li>
+<li>no distributed path,</li>
+<li>no adapter-only DPO path yet.</li>
+</ul>
+<p>Immediate safe improvement already made:</p>
+<ul>
+<li>SFT now exposes DataLoader worker and pinned-memory knobs and uses non-blocking</li>
+</ul>
+<p>tensor transfers when moving batches to the training device.</p>
+<p>Deferred improvements:</p>
+<ul>
+<li>precompute DPO reference log-probabilities,</li>
+<li>LoRA/QLoRA support for 3B/4B FinChain SFT and DPO/OPD,</li>
+<li>Accelerate/FSDP launch path,</li>
+<li>FlashAttention 2 variable-length packing,</li>
+<li>vLLM or another continuous-batching path for high-throughput rollouts.</li>
+</ul>
+<h2 id="9-multi-gpu-learning-path">9. Multi-GPU learning path</h2>
+<p>Do not start by trying to make the whole project distributed.</p>
+<p>The learning ladder should be:</p>
+<ol>
+<li>single-GPU LoRA/QLoRA on Qwen3-4B,</li>
+<li>distributed toy notebook that proves DDP/FSDP concepts,</li>
+<li>DDP for replicated adapter training if memory already fits,</li>
+<li>FSDP or DeepSpeed ZeRO when memory does not fit or optimizer state dominates,</li>
+<li>multi-GPU rollout generation when sampling throughput becomes the bottleneck.</li>
+</ol>
+<p>Interview-relevant terms to learn:</p>
+<ul>
+<li>rank,</li>
+<li>world size,</li>
+<li>process group,</li>
+<li>all-reduce,</li>
+<li>distributed sampler,</li>
+<li>gradient synchronization,</li>
+<li>parameter sharding,</li>
+<li>optimizer-state sharding,</li>
+<li>activation checkpointing,</li>
+<li>NCCL,</li>
+<li>sharded checkpoints.</li>
+</ul>
+<p>The main conceptual distinction:</p>
+<ul>
+<li><strong>DDP</strong> replicates the model on every GPU and synchronizes gradients.</li>
+<li><strong>FSDP/ZeRO</strong> shard model states across GPUs so each GPU stores less.</li>
+<li><strong>Tensor/pipeline parallelism</strong> split the model's computation itself and are</li>
+</ul>
+<p>usually unnecessary for this project until models get much larger.</p>
+<h2 id="10-platform-stance">10. Platform stance</h2>
+<p>RunPod is still useful, but it should not be the only mental model.</p>
+<p>Use RunPod for:</p>
+<ul>
+<li>cheap single-GPU notebooks,</li>
+<li>A40/L40S/RTX 6000 Ada LoRA experiments,</li>
+<li>quick Jupyter iteration,</li>
+<li>small cluster tests if availability is acceptable.</li>
+</ul>
+<p>Use Lambda when:</p>
+<ul>
+<li>you want a more conventional VM/cloud experience,</li>
+<li>you can tolerate higher cost or capacity friction,</li>
+<li>you need stable multi-GPU boxes or 1-click clusters.</li>
+</ul>
+<p>Use Modal when:</p>
+<ul>
+<li>the workload is job-shaped rather than notebook-shaped,</li>
+<li>you want repeatable batch rollouts,</li>
+<li>startup/container ergonomics matter more than a persistent interactive pod.</li>
+</ul>
+<p>Use Vast.ai when:</p>
+<ul>
+<li>price is the dominant constraint,</li>
+<li>you are willing to filter hard for host reliability,</li>
+<li>you can tolerate more platform variability.</li>
+</ul>
+<p>The practical rule:</p>
+<blockquote><p>Notebook learning on RunPod; reproducible batch rollouts on Modal or a stable</p></blockquote>
+<blockquote><p>VM; serious multi-GPU only when the single-GPU result has earned the spend.</p></blockquote>
+<h2 id="11-evidence-and-sources">11. Evidence and sources</h2>
+<p>Primary/current sources used for the current direction:</p>
+<ul>
+<li>FinChain arXiv: https://arxiv.org/abs/2506.02515</li>
+<li>FinQA site: https://finqasite.github.io/</li>
+<li>TAT-QA repository: https://github.com/NExTplusplus/TAT-QA</li>
+<li>FinanceBench repository: https://github.com/patronus-ai/financebench</li>
+<li>PyTorch DistributedDataParallel docs: https://docs.pytorch.org/docs/main/generated/torch.nn.parallel.DistributedDataParallel.html</li>
+<li>Hugging Face Accelerate FSDP guide: https://huggingface.co/docs/accelerate/main/en/usage_guides/fsdp</li>
+<li>DeepSpeed ZeRO tutorial: https://www.deepspeed.ai/tutorials/zero/</li>
+<li>RunPod pods and instant clusters docs: https://docs.runpod.io/</li>
+<li>Lambda GPU cloud pricing: https://lambda.ai/service/gpu-cloud/pricing</li>
+<li>Modal GPU docs: https://modal.com/docs/reference/modal.gpu</li>
+<li>Vast.ai docs/site: https://vast.ai/</li>
+</ul>
+<h2 id="12-the-interview-story">12. The interview story</h2>
+<p>The strongest version:</p>
+<blockquote><p>I built a post-training lab around financial symbolic reasoning because finance</p></blockquote>
+<blockquote><p>gives objective correctness signals. I started with SFT and DPO to learn the</p></blockquote>
+<blockquote><p>fundamentals, then moved to FinChain because executable chains let me build an</p></blockquote>
+<blockquote><p>RLVR loop with deterministic rewards. The core comparison was not just</p></blockquote>
+<blockquote><p>accuracy: I compared SFT, rejection SFT, OPD, and GRPO by accuracy, parseability,</p></blockquote>
+<blockquote><p>KL drift, rollout tokens, GPU-hours, and transfer to messier finance tasks. I</p></blockquote>
+<blockquote><p>also learned where the approach can fail: template overfit, reward hacking, and</p></blockquote>
+<blockquote><p>synthetic-to-real transfer.</p></blockquote>
+<p>The sentence that keeps it honest:</p>
+<blockquote><p>FinChain is my wind tunnel, not my destination.</p></blockquote>
+</main>
+</body>
+</html>

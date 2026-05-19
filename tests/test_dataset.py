@@ -68,6 +68,38 @@ def test_make_loaders_builds_reproducible_disjoint_stratified_splits(monkeypatch
     assert val_sources.count("math") == 20
 
 
+def test_make_loaders_applies_dataloader_performance_knobs(monkeypatch) -> None:
+    """SFT uses the same notebook-facing DataLoader knobs as DPO."""
+    from finpost.training import dataset as dataset_module
+
+    records = [_example("gsm8k", i) for i in range(8)]
+    monkeypatch.setattr(dataset_module, "load_gsm8k", lambda split="train": records)
+    monkeypatch.setattr(dataset_module, "load_math", lambda split="train": [])
+
+    config = Config(
+        model=ModelConfig(base_model_id="sshleifer/tiny-gpt2", dtype="float32"),
+        data=DataConfig(sources=["gsm8k"], val_split_pct=25.0, seed=1),
+        training=TrainingConfig(
+            max_steps=10,
+            lr=1e-4,
+            warmup_steps=1,
+            per_device_batch_size=2,
+            dataloader_num_workers=2,
+            pin_memory=True,
+        ),
+        packing=PackingConfig(max_seq_len=64, isolate_documents=False),
+    )
+
+    train_loader, val_loader = dataset_module.make_loaders(config, TinyTokenizer())
+
+    assert train_loader.num_workers == 2
+    assert val_loader.num_workers == 2
+    assert train_loader.pin_memory is True
+    assert val_loader.pin_memory is True
+    assert train_loader.persistent_workers is True
+    assert val_loader.persistent_workers is True
+
+
 def test_dataset_tokenizes_serialized_prompt_and_masks_prompt_length(monkeypatch) -> None:
     """Items are tokenizer-agnostic IDs plus the serialized prompt length."""
     from finpost.training import dataset as dataset_module

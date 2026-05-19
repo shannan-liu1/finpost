@@ -1,5 +1,7 @@
 # RunPod end-to-end runbook — Phase 1 Qwen 0.5B SFT ablation
 
+> Active direction note (2026-05-19): this runbook is preserved as the Phase 1 SFT ablation artifact. The current roadmap is FinChain-first RLVR. Read STUDY.html, docs/finchain-rlvr-professor-study.html, and docs/distributed-training-and-platforms.html before treating this older runbook as the main project path.
+
 This is the single document you read while running `notebooks/sft_phase1_runpod_ablation_2000.ipynb` on a fresh RunPod pod. Pod creation through eval download. Every command is shown, every expected output is described, every failure mode that has actually cost money on prior runs is flagged inline.
 
 Designed to be read side-by-side with the notebook. Open the HTML version of this file locally (`docs/runbooks/runpod-end-to-end.html`) and the notebook on the pod; work down both in parallel.

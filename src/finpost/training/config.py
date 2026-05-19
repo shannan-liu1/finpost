@@ -134,6 +134,15 @@ class TrainingConfig(BaseModel):
         ge=1,
         description="Packed rows per GPU forward pass.",
     )
+    dataloader_num_workers: int = Field(
+        default=0,
+        ge=0,
+        description="Worker processes for CPU-side collation/token staging.",
+    )
+    pin_memory: bool = Field(
+        default=True,
+        description="Pin host tensors so CUDA transfers can use non_blocking=True.",
+    )
 
     @model_validator(mode="after")
     def _warmup_must_be_less_than_max(self) -> "TrainingConfig":
