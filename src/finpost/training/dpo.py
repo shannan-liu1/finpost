@@ -7,6 +7,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+from finpost.training.logprobs import token_log_probs_via_cross_entropy
 from finpost.training.masking import IGNORE_INDEX
 
 
@@ -20,26 +21,20 @@ def sequence_log_probs(
 
     ``labels`` follows the causal-LM convention used by the SFT trainer:
     prompt and padding positions are set to ``IGNORE_INDEX``. The model
-    predicts token ``t`` from logits at position ``t - 1``, so both tensors
-    are shifted before gathering token log-probabilities.
-    """
-    if logits.ndim != 3:
-        raise ValueError(
-            f"logits must have shape (batch, seq, vocab); got {tuple(logits.shape)}"
-        )
-    if labels.ndim != 2:
-        raise ValueError(f"labels must have shape (batch, seq); got {tuple(labels.shape)}")
-    if logits.shape[:2] != labels.shape:
-        raise ValueError(
-            "logits and labels batch/sequence dimensions must match: "
-            f"{tuple(logits.shape[:2])} vs {tuple(labels.shape)}"
-        )
-    if logits.size(1) < 2:
-        raise ValueError("sequence_log_probs requires sequence length >= 2")
+    predicts token ``t`` from logits at position ``t - 1``, so both
+    tensors are shifted internally before computing log-probabilities.
 
-    shifted_logits = logits[:, :-1, :]
-    shifted_labels = labels[:, 1:]
-    response_mask = shifted_labels != ignore_index
+    The per-token computation is delegated to
+    ``finpost.training.logprobs.token_log_probs_via_cross_entropy`` -
+    see that module's docstring for the derivation of why
+    ``F.cross_entropy`` is the right primitive here (it computes the
+    same quantity as ``log_softmax + gather`` without materializing
+    the full ``log_softmax`` tensor, which would be ~1.24 GB per
+    forward at Qwen3-4B scale).
+    """
+    token_logps, response_mask = token_log_probs_via_cross_entropy(
+        logits, labels, ignore_index=ignore_index
+    )
     counts = response_mask.sum(dim=-1)
     if (counts == 0).any():
         bad_rows = torch.nonzero(counts == 0, as_tuple=False).flatten().tolist()
@@ -47,12 +42,10 @@ def sequence_log_probs(
             f"DPO batch row(s) have no response labels after shifting: {bad_rows}"
         )
 
-    safe_labels = shifted_labels.masked_fill(~response_mask, 0)
-    token_logps = F.log_softmax(shifted_logits, dim=-1).gather(
-        dim=-1,
-        index=safe_labels.unsqueeze(-1),
-    ).squeeze(-1)
-    return (token_logps * response_mask).sum(dim=-1), counts
+    # ``token_logps`` is exactly 0 at ignored positions (the cross-entropy
+    # kernel handles ignore_index for us), so we can sum directly - no
+    # separate mask multiplication is needed.
+    return token_logps.sum(dim=-1), counts
 
 
 def compute_dpo_loss(

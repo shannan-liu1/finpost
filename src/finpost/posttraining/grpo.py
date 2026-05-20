@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 
+from finpost.training.logprobs import token_log_probs_via_cross_entropy
 from finpost.training.masking import IGNORE_INDEX
 
 
@@ -46,33 +46,24 @@ def token_log_probs_from_logits(
     *,
     ignore_index: int = IGNORE_INDEX,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return per-token log-probs and response mask for causal-LM labels."""
-    if logits.ndim != 3:
-        raise ValueError(
-            f"logits must have shape (batch, seq, vocab); got {tuple(logits.shape)}"
-        )
-    if labels.ndim != 2:
-        raise ValueError(f"labels must have shape (batch, seq); got {tuple(labels.shape)}")
-    if logits.shape[:2] != labels.shape:
-        raise ValueError(
-            "logits and labels batch/sequence dimensions must match: "
-            f"{tuple(logits.shape[:2])} vs {tuple(labels.shape)}"
-        )
-    if logits.size(1) < 2:
-        raise ValueError("token_log_probs_from_logits requires sequence length >= 2")
+    """Return per-token log-probs and response mask for causal-LM labels.
 
-    shifted_logits = logits[:, :-1, :]
-    shifted_labels = labels[:, 1:]
-    response_mask = shifted_labels != ignore_index
-    if (response_mask.sum(dim=-1) == 0).any():
-        bad_rows = torch.nonzero(response_mask.sum(dim=-1) == 0, as_tuple=False).flatten()
-        raise ValueError(f"GRPO row(s) have no response labels after shifting: {bad_rows.tolist()}")
-
-    safe_labels = shifted_labels.masked_fill(~response_mask, 0)
-    token_logps = F.log_softmax(shifted_logits, dim=-1).gather(
-        dim=-1,
-        index=safe_labels.unsqueeze(-1),
-    ).squeeze(-1)
+    Thin wrapper over
+    ``finpost.training.logprobs.token_log_probs_via_cross_entropy``
+    that adds a GRPO-flavoured error message when a row contains no
+    response labels. See that module's docstring for why this uses
+    ``F.cross_entropy`` instead of the explicit ``log_softmax +
+    gather`` form.
+    """
+    token_logps, response_mask = token_log_probs_via_cross_entropy(
+        logits, labels, ignore_index=ignore_index
+    )
+    counts = response_mask.sum(dim=-1)
+    if (counts == 0).any():
+        bad_rows = torch.nonzero(counts == 0, as_tuple=False).flatten()
+        raise ValueError(
+            f"GRPO row(s) have no response labels after shifting: {bad_rows.tolist()}"
+        )
     return token_logps, response_mask
 
 
