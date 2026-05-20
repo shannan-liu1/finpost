@@ -111,8 +111,137 @@ def test_resolve_max_new_tokens_by_source_overrides_global_budget() -> None:
     from scripts.build_dpo_pairs import resolve_max_new_tokens_by_source
 
     assert resolve_max_new_tokens_by_source(
-        sources=["gsm8k", "math"],
+        sources=["gsm8k", "math", "finchain"],
         max_new_tokens=768,
         max_new_tokens_gsm8k=256,
         max_new_tokens_math=None,
-    ) == {"gsm8k": 256, "math": 768}
+        max_new_tokens_finchain=512,
+    ) == {"gsm8k": 256, "math": 768, "finchain": 512}
+
+
+def test_shard_examples_assigns_disjoint_deterministic_prompt_slices() -> None:
+    """Parallel rollout workers should sample disjoint prompt shards."""
+    from finpost.data.schema import Example
+    from scripts.build_dpo_pairs import shard_examples
+
+    examples = [
+        Example(
+            id=f"p{idx}",
+            source="finchain",
+            prompt=f"prompt {idx}",
+            response=f"response {idx}",
+            final_answer=str(idx),
+        )
+        for idx in range(7)
+    ]
+
+    shard_0 = shard_examples(examples, shard_id=0, num_shards=2)
+    shard_1 = shard_examples(examples, shard_id=1, num_shards=2)
+
+    assert [example.id for example in shard_0] == ["p0", "p2", "p4", "p6"]
+    assert [example.id for example in shard_1] == ["p1", "p3", "p5"]
+    assert {example.id for example in shard_0}.isdisjoint(
+        {example.id for example in shard_1}
+    )
+
+
+def test_select_train_prompts_can_load_finchain(monkeypatch) -> None:
+    """The offline comparator can build preference pairs from FinChain train prompts."""
+    import scripts.build_dpo_pairs as pair_builder
+    from finpost.data.schema import Example
+
+    monkeypatch.setattr(
+        pair_builder,
+        "load_finchain",
+        lambda split="train": [
+            Example(
+                id=f"finchain-{split}-{idx}",
+                source="finchain",
+                prompt=f"prompt {idx}",
+                response=f"response {idx}",
+                final_answer=str(idx),
+            )
+            for idx in range(4)
+        ],
+    )
+
+    selected = pair_builder.select_train_prompts(
+        sources=["finchain"],
+        heldout_train_n=3,
+        seed=123,
+    )
+
+    assert len(selected) == 3
+    assert {example.source for example in selected} == {"finchain"}
+
+
+def test_merge_dpo_pair_shards_combines_full_shard_set(tmp_path) -> None:
+    """Shard outputs should merge back into single-run artifact shape."""
+    import json
+
+    from scripts.merge_dpo_pair_shards import merge_shards
+
+    shard_dirs = []
+    for shard_id in range(2):
+        shard_dir = tmp_path / f"shard-{shard_id:02d}-of-02"
+        shard_dir.mkdir()
+        completion = {
+            "prompt_id": f"p{shard_id}",
+            "prompt": f"prompt {shard_id}",
+            "source": "finchain",
+            "gold_answer": str(shard_id),
+            "sample_index": 0,
+            "completion": f"Final Answer: {shard_id}",
+            "predicted_answer": str(shard_id),
+            "correct": True,
+        }
+        pair = {
+            "prompt": f"prompt {shard_id}",
+            "chosen": f"Final Answer: {shard_id}",
+            "rejected": "Final Answer: 999",
+            "source": "finchain",
+            "prompt_id": f"p{shard_id}",
+            "chosen_grade": {"correct": True, "sample_index": 0},
+            "rejected_grade": {"correct": False, "sample_index": 1},
+            "metadata": {"gold_answer": str(shard_id)},
+        }
+        (shard_dir / "completions.jsonl").write_text(
+            json.dumps(completion) + "\n",
+            encoding="utf-8",
+        )
+        (shard_dir / "pairs.jsonl").write_text(
+            json.dumps(pair) + "\n",
+            encoding="utf-8",
+        )
+        (shard_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "model_checkpoint": "model",
+                    "verifier": "verifier",
+                    "sources": ["finchain"],
+                    "heldout_train_n": 2,
+                    "shard_id": shard_id,
+                    "num_shards": 2,
+                    "samples_per_prompt": 2,
+                    "generation_batch_size": 4,
+                    "max_new_tokens": 128,
+                    "max_new_tokens_by_source": {"finchain": 128},
+                    "temperature": 0.8,
+                    "top_p": 0.95,
+                    "max_pairs_per_prompt": None,
+                    "seed": 42,
+                    "dtype": "bfloat16",
+                }
+            ),
+            encoding="utf-8",
+        )
+        shard_dirs.append(shard_dir)
+
+    manifest = merge_shards(shard_dirs=shard_dirs, out_dir=tmp_path / "merged")
+
+    assert manifest["completion_count"] == 2
+    assert manifest["pair_count"] == 2
+    assert manifest["source_counts"] == {"finchain": 2}
+    assert (tmp_path / "merged" / "completions.jsonl").exists()
+    assert (tmp_path / "merged" / "pairs.jsonl").exists()
+    assert (tmp_path / "merged" / "manifest.json").exists()

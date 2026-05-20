@@ -19,6 +19,7 @@ from typing import Any
 import torch
 from tqdm.auto import tqdm
 
+from finpost.data.finchain import load_finchain
 from finpost.data.gsm8k import load_gsm8k
 from finpost.data.math_dataset import load_math
 from finpost.data.schema import Example, Source
@@ -46,6 +47,8 @@ def _load_train_examples(source: Source) -> list[Example]:
         return load_gsm8k("train")
     if source == "math":
         return load_math("train")
+    if source == "finchain":
+        return load_finchain("train")
     raise ValueError(f"unsupported source: {source}")
 
 
@@ -79,6 +82,20 @@ def select_train_prompts(
     rng = random.Random(f"{seed}:combined:dpo")
     rng.shuffle(selected)
     return selected
+
+
+def shard_examples(
+    examples: list[Example],
+    *,
+    shard_id: int,
+    num_shards: int,
+) -> list[Example]:
+    """Return the deterministic prompt slice assigned to one rollout worker."""
+    if num_shards <= 0:
+        raise ValueError("num_shards must be positive")
+    if not 0 <= shard_id < num_shards:
+        raise ValueError("shard_id must satisfy 0 <= shard_id < num_shards")
+    return examples[shard_id::num_shards]
 
 
 def _completion_grade(example: Example, completion: str) -> tuple[str | None, bool]:
@@ -194,9 +211,11 @@ def resolve_max_new_tokens_by_source(
     max_new_tokens: int,
     max_new_tokens_gsm8k: int | None = None,
     max_new_tokens_math: int | None = None,
+    max_new_tokens_finchain: int | None = None,
 ) -> dict[Source, int]:
     """Resolve per-source generation budgets from CLI overrides."""
     overrides = {
+        "finchain": max_new_tokens_finchain,
         "gsm8k": max_new_tokens_gsm8k,
         "math": max_new_tokens_math,
     }
@@ -393,7 +412,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sources",
         nargs="+",
-        choices=["gsm8k", "math"],
+        choices=["gsm8k", "math", "finchain"],
         default=["gsm8k", "math"],
     )
     parser.add_argument("--heldout-train-n", type=int, default=2000)
@@ -402,10 +421,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=768)
     parser.add_argument("--max-new-tokens-gsm8k", type=int, default=None)
     parser.add_argument("--max-new-tokens-math", type=int, default=None)
+    parser.add_argument("--max-new-tokens-finchain", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--max-pairs-per-prompt", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--shard-id",
+        type=int,
+        default=0,
+        help="Zero-based rollout shard id. Use with --num-shards for multi-GPU sampling.",
+    )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help="Total number of rollout shards. Each shard writes its own out-dir.",
+    )
     parser.add_argument(
         "--dtype",
         choices=["float32", "bfloat16", "float16"],
@@ -448,16 +480,30 @@ def main() -> None:
         heldout_train_n=args.heldout_train_n,
         seed=args.seed,
     )
+    examples = shard_examples(
+        examples,
+        shard_id=args.shard_id,
+        num_shards=args.num_shards,
+    )
+    if not examples:
+        raise ValueError(
+            f"shard {args.shard_id}/{args.num_shards} received zero prompts; "
+            "reduce --num-shards or increase --heldout-train-n"
+        )
     source_counts = {
         source: sum(ex.source == source for ex in examples)
         for source in args.sources
     }
-    print(f"[pairs] selected {len(examples)} prompts: {source_counts}")
+    print(
+        f"[pairs] selected {len(examples)} prompts for shard "
+        f"{args.shard_id}/{args.num_shards}: {source_counts}"
+    )
     max_new_tokens_by_source = resolve_max_new_tokens_by_source(
         sources=args.sources,
         max_new_tokens=args.max_new_tokens,
         max_new_tokens_gsm8k=args.max_new_tokens_gsm8k,
         max_new_tokens_math=args.max_new_tokens_math,
+        max_new_tokens_finchain=args.max_new_tokens_finchain,
     )
     print(f"[pairs] max_new_tokens_by_source: {max_new_tokens_by_source}")
 
@@ -521,6 +567,9 @@ def main() -> None:
         "sources": args.sources,
         "source_counts": source_counts,
         "heldout_train_n": args.heldout_train_n,
+        "shard_id": args.shard_id,
+        "num_shards": args.num_shards,
+        "sharded_prompt_count": len(examples),
         "samples_per_prompt": args.samples_per_prompt,
         "generation_batch_size": args.generation_batch_size,
         "max_new_tokens": args.max_new_tokens,

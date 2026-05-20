@@ -1,0 +1,35 @@
+model:
+  policy_checkpoint: results/checkpoints/qwen25-1p5b-finchain-sft-hf
+  reference_checkpoint: results/checkpoints/qwen25-1p5b-finchain-sft-hf
+  dtype: bfloat16
+  use_safetensors: true
+data:
+  pairs_path: results/finchain_pairs/run_001/merged/pairs.jsonl
+  manifest_path: results/finchain_pairs/run_001/merged/manifest.json
+  tokenized_cache_path: results/finchain_pairs/run_001/merged/pairs.tokenized.pt
+  rebuild_tokenized_cache: false
+  precompute_reference_logps: true
+  reference_logps_cache_path: results/finchain_pairs/run_001/merged/pairs.reference-logps.pt
+  seed: 42
+dpo:
+  beta: 0.1
+training:
+  max_steps: 500
+  warmup_steps: 50
+  lr: 5.0e-6
+  weight_decay: 0.01
+  grad_accum_steps: 8
+  grad_clip: 1.0
+  checkpoint_every_n_steps: 100
+  per_device_pair_batch_size: 2
+  dataloader_num_workers: 2
+  pin_memory: true
+packing:
+  max_seq_len: 1536
+logging:
+  wandb_project: finpost-finchain-dpo
+  run_name: qwen25-1p5b-finchain-dpo
+checkpointing:
+  save_dir: results/checkpoints/qwen25-1p5b-finchain-dpo
+  retention_last_n: 4
+  resume_from: null
