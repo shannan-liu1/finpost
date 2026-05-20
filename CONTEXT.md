@@ -52,8 +52,8 @@ SFT and DPO are not themselves RLVR in the strict sense. OPD and GRPO are the mo
 ## Model And Hardware Posture
 
 - **Canary model:** keep `Qwen/Qwen2.5-0.5B` for CPU/local tests, notebook debugging, and cheap trainer regression checks.
-- **Default serious model:** use `Qwen/Qwen3-4B-Base` with LoRA or QLoRA for the main FinChain study. It is large enough to make finance reasoning non-trivial, small enough for a single 48GB GPU workflow, and modern enough to discuss credibly.
-- **Controlled fallback:** use `Qwen/Qwen2.5-3B-Base` if Qwen3 introduces avoidable tooling friction.
+- **Default serious model:** use `Qwen/Qwen2.5-1.5B` for the main FinChain loop. It is large enough to move beyond the 0.5B canary, small enough for fast iteration, and keeps the Qwen tokenizer/tooling path stable.
+- **Scale-up candidate:** use `Qwen/Qwen3-4B-Base` only after the 1.5B loop is interpretable and the scaling question is explicit.
 - **Reference baselines:** optionally evaluate a strong instruct model such as Phi-3.5 Mini Instruct or Llama 3.2 3B, but do not make it the main train-from-base substrate.
 - **Normal GPU:** use one 48GB RunPod-class GPU such as A40, L40S, RTX 6000 Ada, or A6000 for LoRA/QLoRA, rollouts, OPD, and a first GRPO run.
 - **Cluster experiment:** use 2x or 4x A100/H100 only after a single-GPU study is reproducible. The cluster story should be about scaling rollout throughput and grouped RL updates, not rescuing an unclear experiment.

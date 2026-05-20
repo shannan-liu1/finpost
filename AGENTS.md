@@ -10,7 +10,7 @@ The active direction is FinChain-first RLVR:
 
 - FinChain is the primary benchmark and verifier substrate.
 - FinQA is a transfer check, not the main training surface.
-- Qwen3-4B-Base with LoRA/QLoRA is the default serious model.
+- Qwen2.5-1.5B is the default serious model for the next FinChain loop.
 - Qwen2.5-0.5B remains the local canary and cheap trainer regression model.
 - OPD and GRPO are the highest-signal methods for the next phase; DPO remains useful as a fundamentals/comparator artifact.
 - Treat FinChain as a controlled RLVR laboratory, not as proof of broad finance competence. Transfer checks on FinQA/TAT-QA/FinanceBench-style tasks are required before making strong claims.

@@ -127,8 +127,8 @@ Default:
 
 - one 48GB GPU on RunPod or similar
 - use LoRA/QLoRA
-- start with `Qwen/Qwen3-4B-Base`
-- fall back to `Qwen/Qwen2.5-3B-Base` if tooling friction is high
+- start with `Qwen/Qwen2.5-1.5B`
+- treat `Qwen/Qwen3-4B-Base` as a scale-up candidate after the 1.5B loop is interpretable
 
 Cluster only after:
 

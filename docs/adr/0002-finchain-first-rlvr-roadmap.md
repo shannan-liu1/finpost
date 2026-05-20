@@ -25,7 +25,7 @@ Use the following method ladder:
 5. Group Relative Policy Optimization (GRPO)
 6. Direct Preference Optimization (DPO) as a fundamentals/comparator artifact, not the primary finance path
 
-Use `Qwen/Qwen3-4B-Base` with LoRA or QLoRA as the default serious model. Keep `Qwen/Qwen2.5-0.5B` as a canary and `Qwen/Qwen2.5-3B-Base` as the fallback if Qwen3 tooling creates avoidable friction.
+Use `Qwen/Qwen2.5-1.5B` as the default serious model for the next FinChain loop. Keep `Qwen/Qwen2.5-0.5B` as a canary and treat `Qwen/Qwen3-4B-Base` as a scale-up candidate after the 1.5B loop is interpretable.
 
 Use one 48GB GPU as the default hardware target. Treat multi-GPU runs as a later scaling experiment only after the single-GPU workflow is reproducible.
 
@@ -72,5 +72,5 @@ Rejected for implementation order. PPO is important theory for understanding RLH
 ## References
 
 - FinChain arXiv: https://arxiv.org/abs/2506.02515
-- Qwen3-4B-Base model card: https://huggingface.co/Qwen/Qwen3-4B-Base
+- Qwen2.5-1.5B model card: https://huggingface.co/Qwen/Qwen2.5-1.5B
 - RunPod GPU catalog/pricing: https://www.runpod.io/pricing

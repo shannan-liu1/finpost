@@ -40,9 +40,9 @@ The point is not to train the largest possible model. The point is to learn the 
 
 ### Q-K: Model
 
-**Decision:** Default to `Qwen/Qwen3-4B-Base` with LoRA or QLoRA.
+**Decision:** Default to `Qwen/Qwen2.5-1.5B` for the next FinChain loop.
 
-**Fallback:** `Qwen/Qwen2.5-3B-Base` if Qwen3 tooling creates avoidable friction.
+**Scale-up candidate:** `Qwen/Qwen3-4B-Base` after the 1.5B loop is interpretable.
 
 **Canary:** keep `Qwen/Qwen2.5-0.5B` for local smoke tests and cheap notebook iteration.
 
@@ -92,8 +92,8 @@ Goal: choose a serious model empirically before training.
 
 Default candidates:
 
+- `Qwen/Qwen2.5-1.5B`
 - `Qwen/Qwen3-4B-Base`
-- `Qwen/Qwen2.5-3B-Base`
 - Optional reference: `Phi-3.5-mini-instruct` or `Llama-3.2-3B-Instruct` for inference-only comparison
 
 Metrics:

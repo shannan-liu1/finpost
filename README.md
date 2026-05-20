@@ -24,7 +24,7 @@ The project is organized around a small number of high-leverage artifacts:
 6. final comparison notebook with FinQA transfer
 7. study guide tying SFT, DPO, OPD, PPO, GRPO, RLHF, RLVR, KL control, and reward hacking back to repo code
 
-The default serious model is `Qwen/Qwen3-4B-Base` with LoRA or QLoRA on a 48GB GPU. `Qwen/Qwen2.5-0.5B` remains the local canary and cheap trainer regression model.
+The default serious model is `Qwen/Qwen2.5-1.5B` for faster FinChain iteration. `Qwen/Qwen2.5-0.5B` remains the local canary and cheap trainer regression model.
 
 New RLVR notebook scaffolds live under `notebooks/finchain_*.ipynb`. Existing SFT and DPO notebooks are preserved as phase artifacts.
 

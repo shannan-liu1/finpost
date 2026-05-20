@@ -3,7 +3,7 @@
 Usage:
 
     python scripts/run_finchain_eval.py \
-        --checkpoints base=Qwen/Qwen3-4B-Base \
+        --checkpoints base=Qwen/Qwen2.5-1.5B \
         --n 200 \
         --out-dir results/evals/finchain_base
 
