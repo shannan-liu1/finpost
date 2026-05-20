@@ -52,6 +52,21 @@ Interview sentence:
 
 > I implemented DPO to understand preference optimization, but I did not make offline DPO the main finance experiment because FinChain gives a better on-policy verifier signal.
 
+Implementation note:
+
+The repo's DPO path is offline by design: generate completions once, score them,
+write fixed chosen/rejected pairs, then train. Do not treat this as the OPD
+implementation just because OPD can emit DPO-shaped pairs as an intermediate
+data format.
+
+RunPod notebook:
+
+- `notebooks/finchain_10_dpo_runpod.ipynb`
+
+Study guide:
+
+- `docs/dpo-study.md`
+
 ### Rejection SFT
 
 Rejection SFT trains on the model's own verified-correct completions. It is the simplest self-improvement baseline.
@@ -70,6 +85,29 @@ Interview sentence:
 
 > OPD was the practical bridge from DPO to RLVR: same pairwise math, but the pairs came from the current policy and a deterministic verifier.
 
+Implementation note:
+
+There are two reasonable OPD implementations:
+
+- a simple bridge implementation that periodically samples current-policy
+  rollouts, converts verifier-labeled outputs into preference pairs, and reuses
+  the DPO loss;
+- a more online teacher/student implementation that interleaves generation,
+  verification, token log-prob scoring, and policy updates more tightly.
+
+For the first FinChain result, use the bridge only if it keeps the experiment
+legible. If the study switches to an industry trainer, keep the notebook
+comments focused on what the trainer is doing: sampling from the current policy,
+scoring with a verifier, controlling policy drift, and logging cost.
+
+RunPod notebook:
+
+- `notebooks/finchain_11_opd_runpod.ipynb`
+
+Study guide:
+
+- `docs/opd-study.md`
+
 ### GRPO
 
 Group Relative Policy Optimization samples a group of completions for each prompt, scores them with the verifier, normalizes rewards within the group, and applies a KL-controlled update.
@@ -79,6 +117,14 @@ It is the most promising headline method because FinChain supplies exactly the k
 Interview sentence:
 
 > GRPO was the clean RLVR experiment: grouped rollouts, verifier rewards, relative advantages, and KL control against a reference policy.
+
+RunPod notebook:
+
+- `notebooks/finchain_12_grpo_runpod.ipynb`
+
+Study guide:
+
+- `docs/grpo-study.md`
 
 ## Recommended Method Scope
 
@@ -109,20 +155,20 @@ Cut for now:
 
 Default serious model:
 
-- `Qwen/Qwen3-4B-Base`
+- `Qwen/Qwen2.5-1.5B`
 
 Why:
 
 - modern enough to discuss credibly
-- small enough for one 48GB GPU with LoRA/QLoRA
+- small enough for faster single-GPU iteration
 - base model gives a clean post-training story
 - Qwen family continuity with the existing 0.5B work
 
-Fallback:
+Scale-up candidate:
 
-- `Qwen/Qwen2.5-3B-Base`
+- `Qwen/Qwen3-4B-Base`
 
-Use it if Qwen3 support, tokenizer behavior, or dependency churn slows down the experiment.
+Use it after the 1.5B FinChain loop is interpretable and the scaling question is explicit.
 
 Canary:
 
@@ -165,6 +211,40 @@ Use 2x or 4x A100/H100 only after the single-GPU run is reproducible and the sca
 - Does larger K improve GRPO accuracy per dollar?
 - Does rollout throughput dominate total time?
 - Does multi-GPU let us run a cleaner KL sweep without waiting days?
+
+## Package Strategy
+
+Use from-scratch code where it teaches the core mechanism, then use industry
+packages where the mechanism is understood and the package removes systems
+friction.
+
+Good package targets:
+
+- Hugging Face TRL for SFT, DPO, Online DPO, and GRPO reference behavior.
+- Axolotl when you want config-driven LoRA/QLoRA, DPO, and GRPO runs with fewer
+  handwritten launch details.
+- OpenRLHF or verl when the study needs distributed online RL systems:
+  Ray/vLLM rollout workers, FSDP/DeepSpeed, async generation, or larger-scale
+  actor/reference/reward-model orchestration.
+- vLLM for high-throughput rollout generation once the prompt/verifier/cache
+  contract is stable.
+
+Do not replace the repo primitives before the first clean local explanation.
+The best resume shape is: first-principles implementation for DPO/OPD/GRPO
+math, then an industry-trainer notebook that calls out which production
+mechanisms replace the hand-built version.
+
+Current repo package hooks:
+
+- `src/finpost/posttraining/finchain_rlvr.py` exposes FinChain prompt rows and
+  verifier rewards for industry trainers.
+- `scripts/train_finchain_trl_grpo.py` runs TRL GRPO.
+- `scripts/train_finchain_trl_online_dpo.py` runs TRL OnlineDPO as the online
+  OPD path.
+- `scripts/export_finchain_prompts.py` writes JSONL prompt rows for external
+  trainers and inspection.
+- `pip install -e ".[vllm]"` is optional and should be added only after a
+  non-vLLM GRPO canary works.
 
 ## Study Flow
 
@@ -228,8 +308,8 @@ Notebook:
 
 Run on 200-500 examples:
 
-- Qwen3-4B-Base
-- Qwen2.5-3B-Base
+- Qwen2.5-1.5B
+- Qwen3-4B-Base as a later scale-up reference
 - optional reference instruct model
 
 Pick based on:
@@ -297,11 +377,54 @@ Report:
 - parse failures
 - cost per prompt
 
+First multi-GPU scaling path:
+
+Use rollout parallelism before distributed training. Each GPU samples a
+deterministic shard of the prompt set into its own output directory, then a
+merge step combines JSONL artifacts.
+
+Example for 2x A40 offline FinChain pair generation:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python scripts/build_dpo_pairs.py \
+  --model-checkpoint results/checkpoints/finchain-sft-hf \
+  --sources finchain \
+  --out-dir results/finchain_pairs/run_001/shards/shard-00-of-02 \
+  --heldout-train-n 2000 \
+  --samples-per-prompt 8 \
+  --generation-batch-size 64 \
+  --max-new-tokens-finchain 768 \
+  --shard-id 0 \
+  --num-shards 2
+
+CUDA_VISIBLE_DEVICES=1 python scripts/build_dpo_pairs.py \
+  --model-checkpoint results/checkpoints/finchain-sft-hf \
+  --sources finchain \
+  --out-dir results/finchain_pairs/run_001/shards/shard-01-of-02 \
+  --heldout-train-n 2000 \
+  --samples-per-prompt 8 \
+  --generation-batch-size 64 \
+  --max-new-tokens-finchain 768 \
+  --shard-id 1 \
+  --num-shards 2
+
+python scripts/merge_dpo_pair_shards.py \
+  --shard-dirs \
+    results/finchain_pairs/run_001/shards/shard-00-of-02 \
+    results/finchain_pairs/run_001/shards/shard-01-of-02 \
+  --out-dir results/finchain_pairs/run_001/merged
+```
+
+This same sharding contract should be reused by OPD and GRPO rollout scripts:
+same prompt order, same `shard_id`, same `num_shards`, separate shard
+directories, then one merge/check step before training.
+
 ### Stage 5: Rejection SFT And OPD
 
 Notebook:
 
 - `notebooks/finchain_03_rejection_sft_and_opd.ipynb`
+- `notebooks/finchain_11_opd_runpod.ipynb`
 
 Run:
 
@@ -323,6 +446,7 @@ Compare:
 Notebook:
 
 - `notebooks/finchain_04_grpo.ipynb`
+- `notebooks/finchain_12_grpo_runpod.ipynb`
 
 Run one controlled experiment:
 
@@ -424,5 +548,30 @@ Current FinChain exact-answer eval:
 
 ```powershell
 $env:FINPOST_FINCHAIN_TEST_JSONL = "C:\path\to\audited\finchain_test.jsonl"
-uv --cache-dir .uv-cache run --isolated --frozen --extra dev python scripts/run_finchain_eval.py --checkpoints base=Qwen/Qwen3-4B-Base --n 200 --out-dir results/evals/finchain_base --device cuda
+uv --cache-dir .uv-cache run --isolated --frozen --extra dev python scripts/run_finchain_eval.py --checkpoints base=Qwen/Qwen2.5-1.5B --n 200 --out-dir results/evals/finchain_base --device cuda
+```
+
+RunPod GRPO canary:
+
+```bash
+cd /workspace/finpost
+pip install -e ".[dev,rlvr]"
+python scripts/train_finchain_trl_grpo.py \
+  --model Qwen/Qwen2.5-1.5B \
+  --train-n 256 \
+  --max-steps 20 \
+  --num-generations 4 \
+  --output-dir results/checkpoints/qwen25-1p5b-finchain-grpo-canary
+```
+
+RunPod OnlineDPO / OPD canary:
+
+```bash
+cd /workspace/finpost
+pip install -e ".[dev,rlvr]"
+python scripts/train_finchain_trl_online_dpo.py \
+  --model Qwen/Qwen2.5-1.5B \
+  --train-n 256 \
+  --max-steps 20 \
+  --output-dir results/checkpoints/qwen25-1p5b-finchain-online-dpo-canary
 ```
