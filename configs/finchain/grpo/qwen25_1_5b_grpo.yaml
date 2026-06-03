@@ -1,0 +1,48 @@
+# FinChain GRPO/RLVR config.
+#
+# Mirrors the reported GRPO block in notebooks/03_grpo_rlvr.ipynb. Starts from
+# the selected SFT policy and samples eight completions per prompt.
+
+model:
+  base_model_id: Qwen/Qwen2.5-1.5B
+  policy_checkpoint: results/checkpoints/qwen25-1p5b-finchain-v2-trl-sft-2gpu/selected
+
+data:
+  source: finchain
+  split_strategy: template_disjoint_fresh_seed_v2
+  train_n: 2320
+  validation_n: 870
+  test_n: 870
+
+grpo:
+  num_generations: 8
+  max_completion_length: 512
+  beta_kl: 0.04
+  reward: finchain_binary_exact_answer
+
+training:
+  max_steps: 500
+  eval_steps: [300, 400, 500]
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-6
+  mixed_precision: bf16
+  trainer: scripts/train_finchain_trl_grpo.py
+
+checkpointing:
+  save_dir: results/checkpoints/qwen25-1p5b-finchain-v2-grpo
+  selected_dir: results/checkpoints/qwen25-1p5b-finchain-v2-grpo/selected
+
+logging:
+  wandb_project: finpost-finchain-grpo
+  run_name: qwen25-1p5b-finchain-v2-grpo
+
+huggingface:
+  selected_repo: shannan-liu1/qwen25-1p5b-finchain-v2-grpo-selected
+  candidates_repo: shannan-liu1/qwen25-1p5b-finchain-v2-grpo-candidates
+
+selection:
+  selection_split: validation
+  final_eval_split: test
+  selected_label: grpo_checkpoint_400
+  gate: compare_against_paired_sft_validation_and_test_context

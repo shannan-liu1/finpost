@@ -1,0 +1,13 @@
+{
+  "run_name": "dpo_checkpoint_200",
+  "start_time": "2026-05-28T01:59:39",
+  "end_time": "2026-05-28T02:08:19",
+  "elapsed_sec": 520.1566167604178,
+  "generation_seconds": 488.6228853482753,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 610240,
+  "generated_tokens_decoded": 270278,
+  "tokens_per_second": 1248.8977047504432,
+  "estimated_cost_usd": null
+}

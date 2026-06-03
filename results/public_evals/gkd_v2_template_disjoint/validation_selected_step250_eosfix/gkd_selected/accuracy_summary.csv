@@ -1,0 +1,2 @@
+checkpoint,source,n,accuracy,parse_success_rate,generated_tokens,generated_tokens_decoded,elapsed_sec
+gkd_selected,finchain,870,0.15862068965517243,1.0,666176,334787,307.568

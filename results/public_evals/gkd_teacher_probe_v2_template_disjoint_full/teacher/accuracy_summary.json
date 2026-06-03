@@ -1,0 +1,12 @@
+[
+  {
+    "checkpoint": "teacher",
+    "source": "finchain",
+    "n": 870,
+    "accuracy": 0.2367816091954023,
+    "parse_success_rate": 1.0,
+    "generated_tokens": 668160,
+    "generated_tokens_decoded": 414702,
+    "elapsed_sec": 684.715
+  }
+]

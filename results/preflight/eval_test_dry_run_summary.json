@@ -1,0 +1,16 @@
+{
+  "checkpoints": {
+    "base": "Qwen/Qwen2.5-1.5B"
+  },
+  "dry_run": true,
+  "requested_n": 1,
+  "source_counts": {
+    "finchain": 870
+  },
+  "source_splits": {
+    "finchain": "test"
+  },
+  "sources": [
+    "finchain"
+  ]
+}

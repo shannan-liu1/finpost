@@ -1,0 +1,12 @@
+[
+  {
+    "checkpoint": "sft_checkpoint_250",
+    "source": "finchain",
+    "n": 870,
+    "accuracy": 0.10229885057471265,
+    "parse_success_rate": 0.9885057471264368,
+    "generated_tokens": 590994,
+    "generated_tokens_decoded": 287761,
+    "elapsed_sec": 477.989
+  }
+]

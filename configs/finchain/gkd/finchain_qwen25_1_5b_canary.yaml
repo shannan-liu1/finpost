@@ -1,0 +1,51 @@
+# GKD canary config - 20-step smoke test before the full run.
+#
+# Catches: teacher OOM on this hardware, NaN loss, broken generation,
+# divergence math errors that only surface end-to-end. Should complete
+# in ~5-10 minutes on a single A40 48GB.
+#
+# Differences vs gkd_full:
+#   - max_steps lowered to 20
+#   - rollouts_per_prompt lowered to 2 (was 4)
+#   - max_completion_length lowered to 96 (was 512)
+#   - checkpoint_every_n_steps lowered so the canary writes once
+#   - save dir is canary-namespaced to avoid clobbering full-run checkpoints
+model:
+  student_checkpoint: results/checkpoints/qwen25-1p5b-finchain-v2-trl-sft-2gpu/selected
+  teacher_checkpoint: Qwen/Qwen2.5-7B-Instruct
+  student_dtype: bfloat16
+  teacher_dtype: bfloat16
+  use_safetensors: true
+  gradient_checkpointing: true
+  use_8bit_optimizer: false
+  attn_implementation: null
+data:
+  source: finchain
+  split: train
+  max_prompt_len: 512
+  require_full_prompt_coverage: true
+  seed: 42
+gkd:
+  beta: 0.0  # forward KL (paper default for arithmetic reasoning)
+  sequence_chunk_size: 64
+training:
+  max_steps: 20
+  warmup_steps: 5
+  lr: 3.0e-6
+  weight_decay: 0.01
+  grad_accum_steps: 1
+  grad_clip: 1.0
+  checkpoint_every_n_steps: 20
+  per_device_prompt_batch_size: 1
+  rollouts_per_prompt: 2
+  max_completion_length: 96
+  student_temperature: 1.0
+  dataloader_num_workers: 0
+  pin_memory: true
+logging:
+  wandb_project: finpost-finchain-gkd
+  run_name: qwen25-1p5b-finchain-gkd-canary
+checkpointing:
+  save_dir: results/checkpoints/qwen25-1p5b-finchain-gkd-canary
+  retention_last_n: 1
+  resume_from: null

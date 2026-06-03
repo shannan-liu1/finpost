@@ -1,0 +1,2 @@
+checkpoint,source,n,accuracy,parse_success_rate,generated_tokens,generated_tokens_decoded,elapsed_sec
+sft_final,finchain,870,0.10804597701149425,0.993103448275862,623063,290195,539.518

@@ -1,0 +1,2 @@
+checkpoint,source,n,accuracy,parse_success_rate,generated_tokens,generated_tokens_decoded,elapsed_sec
+dpo_checkpoint_300,finchain,870,0.03103448275862069,0.9770114942528736,608522,277030,447.481

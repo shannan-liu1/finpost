@@ -1,0 +1,37 @@
+{
+  "notebooks": {
+    "dpo": {
+      "compile_errors": [],
+      "compiles": true,
+      "missing_fragments": [],
+      "path": "notebooks\\02_dpo.ipynb",
+      "required_fragments_present": true,
+      "test_split_before_selection_guard": true
+    },
+    "grpo": {
+      "compile_errors": [],
+      "compiles": true,
+      "missing_fragments": [],
+      "path": "notebooks\\03_grpo_rlvr.ipynb",
+      "required_fragments_present": true,
+      "test_split_before_selection_guard": true
+    },
+    "opd_gkd": {
+      "compile_errors": [],
+      "compiles": true,
+      "missing_fragments": [],
+      "path": "notebooks\\04_opd_gkd.ipynb",
+      "required_fragments_present": true,
+      "test_split_before_selection_guard": true
+    },
+    "sft": {
+      "compile_errors": [],
+      "compiles": true,
+      "missing_fragments": [],
+      "path": "notebooks\\01_sft_ablation.ipynb",
+      "required_fragments_present": true,
+      "test_split_before_selection_guard": true
+    }
+  },
+  "ok": true
+}

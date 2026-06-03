@@ -1,0 +1,67 @@
+{
+  "artifact_type": "finchain_v2_generation_provenance",
+  "dataset_path": "data/finchain_v2_template_disjoint",
+  "row_payloads_committed": true,
+  "public_repo_self_contained_for_generation": false,
+  "builder_script": "scripts/build_finchain_template_disjoint_splits.py",
+  "builder_module": "src/finpost/data/finchain_template_disjoint_builder.py",
+  "audit_artifact": "results/preflight/finchain_v2_manifest_audit.json",
+  "split_strategy": "template_disjoint_fresh_seed_v2",
+  "template_assignment_seed": 20260524,
+  "generation_seed": 20260525,
+  "upstream_repo": "mbzuai-nlp/finchain",
+  "upstream_revision": "146eaa8225bf867fe7386c2d4727b59e03170235",
+  "external_inputs_required": [
+    "ignored audited source catalog: data/archive/finchain_pilot/{train,validation,test}.jsonl",
+    "checked-out upstream FinChain repository: /workspace/finchain"
+  ],
+  "generation_command": [
+    "python scripts/build_finchain_template_disjoint_splits.py",
+    "  --source-dir data/archive/finchain_pilot",
+    "  --upstream-root /workspace/finchain",
+    "  --output-dir data/finchain_v2_template_disjoint"
+  ],
+  "audit_command": [
+    "python scripts/audit_finchain_template_disjoint_manifest.py",
+    "  --data-dir data/finchain_v2_template_disjoint",
+    "  --out results/preflight/finchain_v2_manifest_audit.json"
+  ],
+  "instances_per_template": {
+    "train": 10,
+    "validation": 30,
+    "test": 30
+  },
+  "row_counts": {
+    "train": 2320,
+    "validation": 870,
+    "test": 870
+  },
+  "split_template_counts": {
+    "train": 232,
+    "validation": 29,
+    "test": 29
+  },
+  "template_overlap_counts": {
+    "train__validation": 0,
+    "train__test": 0,
+    "validation__test": 0
+  },
+  "seed_overlap_counts": {
+    "train__validation": 0,
+    "train__test": 0,
+    "validation__test": 0
+  },
+  "file_checksums_sha256": {
+    "train.jsonl": "a6a3149f34f29adb95600e9fe12f42d9a692eeec4b126bf5f8660da7969708d8",
+    "validation.jsonl": "d9f1f31f456e714fdb9e03c79e2d8f16ca3c0555ad845f54166944344316d0d6",
+    "test.jsonl": "88e41b1f6041c77fbbebddd4986269720c0c5e2f70d97e0c52853f8f28bcf941"
+  },
+  "manifest_checksum_sha256": "c219222315f1ef546858c1b55f8af8acada269e29a3595ec83fd422ec134628d",
+  "multiple_solution_policy": "Use the first upstream returned solution as the training and ChainEval reference; preserve later returned solutions in extra_outputs.",
+  "notes": [
+    "Each upstream template function is assigned to exactly one split.",
+    "Rows are freshly rendered from pinned upstream template functions under deterministic seeds.",
+    "Validation and test contain repeated seeded instances per held-out template; report row-level and macro-by-template metrics.",
+    "This provenance artifact records generation inputs and verified checksums. It is not a row manifest and cannot recreate examples without the external source catalog and upstream template checkout."
+  ]
+}

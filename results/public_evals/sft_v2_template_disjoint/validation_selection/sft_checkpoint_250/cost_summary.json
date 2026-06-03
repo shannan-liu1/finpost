@@ -1,0 +1,13 @@
+{
+  "run_name": "sft_checkpoint_250",
+  "start_time": "2026-05-27T00:37:30",
+  "end_time": "2026-05-27T00:45:31",
+  "elapsed_sec": 481.251536142081,
+  "generation_seconds": 477.71574745699763,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 590994,
+  "generated_tokens_decoded": 287761,
+  "tokens_per_second": 1237.1248030780046,
+  "estimated_cost_usd": null
+}

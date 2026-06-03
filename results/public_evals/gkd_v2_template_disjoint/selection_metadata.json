@@ -1,0 +1,21 @@
+{
+  "final_eval_split": "test",
+  "generation_config_fix": {
+    "eos_token_id": [
+      151643,
+      151645
+    ],
+    "pad_token_id": 151643,
+    "reason": "Qwen/SFT lineage may emit <|endoftext|>; eval must stop on both <|endoftext|> and <|im_end|>."
+  },
+  "interpretation_note": "EOS-fixed GKD step-250 produced a small test exact-answer gain but did not clearly improve ChainEval/reasoning-shape metrics.",
+  "selected_checkpoint_hf_repo": "shannan-liu1/qwen25-1p5b-finchain-v2-gkd-selected",
+  "selected_checkpoint_local": "/workspace/finpost/results/checkpoints/qwen25-1p5b-finchain-v2-gkd-selected-step-250",
+  "selected_label": "gkd_step_00000250",
+  "selection_metric": "accuracy",
+  "selection_split": "validation",
+  "selection_status": "did_not_beat_sft",
+  "test_exact_accuracy_delta": 0.004597701149425287,
+  "test_interpretation": "diagnostic",
+  "test_run": true
+}

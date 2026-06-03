@@ -1,0 +1,12 @@
+[
+  {
+    "checkpoint": "gkd_selected",
+    "source": "finchain",
+    "n": 870,
+    "accuracy": 0.15862068965517243,
+    "parse_success_rate": 1.0,
+    "generated_tokens": 666176,
+    "generated_tokens_decoded": 334787,
+    "elapsed_sec": 307.568
+  }
+]

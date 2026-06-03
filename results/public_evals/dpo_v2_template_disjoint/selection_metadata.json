@@ -1,0 +1,17 @@
+{
+  "candidate_labels": [
+    "dpo_checkpoint_200",
+    "dpo_checkpoint_250",
+    "dpo_checkpoint_300"
+  ],
+  "final_eval_split": "test",
+  "candidate_eval_hf_repo": "shannan-liu1/qwen25-1p5b-finchain-v2-dpo-candidates",
+  "local_checkpoint_path": "results/checkpoints/qwen25-1p5b-finchain-v2-dpo-selected",
+  "selected_checkpoint": "results/checkpoints/qwen25-1p5b-finchain-v2-dpo-selected",
+  "selected_hf_repo": "shannan-liu1/qwen25-1p5b-finchain-v2-dpo-selected",
+  "selected_label": "dpo_checkpoint_200",
+  "selection_metric": "accuracy",
+  "selection_split": "validation",
+  "test_touched_before_selection": false,
+  "tie_breaker": "parse_success_rate_then_earliest_step"
+}

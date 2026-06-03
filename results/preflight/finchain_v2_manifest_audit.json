@@ -1,0 +1,115 @@
+{
+  "checks": {
+    "checksums_match_manifest": true,
+    "difficulty_counts_match_manifest": true,
+    "domain_counts_match_manifest": true,
+    "manifest_seed_overlap_zero": true,
+    "per_template_instance_counts_match_manifest": true,
+    "row_counts_match_expected": true,
+    "row_counts_match_manifest": true,
+    "seed_overlap_zero": true,
+    "strategy_matches": true,
+    "template_counts_match_manifest": true,
+    "template_overlap_zero": true
+  },
+  "data_dir": "data\\finchain_v2_template_disjoint",
+  "file_checksums_sha256": {
+    "test.jsonl": "88e41b1f6041c77fbbebddd4986269720c0c5e2f70d97e0c52853f8f28bcf941",
+    "train.jsonl": "a6a3149f34f29adb95600e9fe12f42d9a692eeec4b126bf5f8660da7969708d8",
+    "validation.jsonl": "d9f1f31f456e714fdb9e03c79e2d8f16ca3c0555ad845f54166944344316d0d6"
+  },
+  "instances_per_template": {
+    "test": 30,
+    "train": 10,
+    "validation": 30
+  },
+  "manifest_checksum_sha256": "5e15b81d4acf487779682eeccec151dfd80699708ffbd3779116a631f4f8a47f",
+  "manifest_path": "data\\finchain_v2_template_disjoint\\manifest.json",
+  "ok": true,
+  "row_counts": {
+    "test": 870,
+    "train": 2320,
+    "validation": 870
+  },
+  "seed_overlap_counts": {
+    "train__test": 0,
+    "train__validation": 0,
+    "validation__test": 0
+  },
+  "split_difficulty_row_counts": {
+    "test": {
+      "advanced": 180,
+      "basic": 360,
+      "intermediate": 330
+    },
+    "train": {
+      "advanced": 460,
+      "basic": 930,
+      "intermediate": 930
+    },
+    "validation": {
+      "advanced": 180,
+      "basic": 330,
+      "intermediate": 360
+    }
+  },
+  "split_domain_row_counts": {
+    "test": {
+      "accounting_and_financial_reporting": 90,
+      "corporate_finance": 60,
+      "crypto_finance": 90,
+      "finance_regulation": 90,
+      "financial_markets": 90,
+      "financial_ratios": 60,
+      "fintech": 30,
+      "investment_analysis": 60,
+      "mergers_and_acquisitions": 60,
+      "personal_finance": 60,
+      "risk_management": 90,
+      "sustainable_finance": 90
+    },
+    "train": {
+      "accounting_and_financial_reporting": 150,
+      "corporate_finance": 150,
+      "crypto_finance": 290,
+      "finance_regulation": 200,
+      "financial_markets": 150,
+      "financial_ratios": 150,
+      "fintech": 130,
+      "investment_analysis": 200,
+      "mergers_and_acquisitions": 200,
+      "personal_finance": 200,
+      "risk_management": 300,
+      "sustainable_finance": 200
+    },
+    "validation": {
+      "accounting_and_financial_reporting": 60,
+      "corporate_finance": 90,
+      "crypto_finance": 90,
+      "finance_regulation": 60,
+      "financial_markets": 60,
+      "financial_ratios": 90,
+      "fintech": 30,
+      "investment_analysis": 90,
+      "mergers_and_acquisitions": 90,
+      "personal_finance": 90,
+      "risk_management": 60,
+      "sustainable_finance": 60
+    }
+  },
+  "split_paths": {
+    "test": "data\\finchain_v2_template_disjoint\\test.jsonl",
+    "train": "data\\finchain_v2_template_disjoint\\train.jsonl",
+    "validation": "data\\finchain_v2_template_disjoint\\validation.jsonl"
+  },
+  "split_template_counts": {
+    "test": 29,
+    "train": 232,
+    "validation": 29
+  },
+  "template_overlap_counts": {
+    "train__test": 0,
+    "train__validation": 0,
+    "validation__test": 0
+  }
+}

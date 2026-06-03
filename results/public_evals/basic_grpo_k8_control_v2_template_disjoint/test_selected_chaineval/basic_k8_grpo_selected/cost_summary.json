@@ -1,0 +1,13 @@
+{
+  "run_name": "basic_k8_grpo_selected",
+  "start_time": "2026-06-01T00:08:16",
+  "end_time": "2026-06-01T00:16:23",
+  "elapsed_sec": 487.32736501283944,
+  "generation_seconds": 407.21439002268016,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 660547,
+  "generated_tokens_decoded": 275256,
+  "tokens_per_second": 1622.1111438699656,
+  "estimated_cost_usd": null
+}

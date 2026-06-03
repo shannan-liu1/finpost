@@ -1,0 +1,17 @@
+torch
+transformers
+datasets
+accelerate
+trl
+peft
+huggingface_hub
+pandas
+numpy
+scipy
+scikit-learn
+tqdm
+pyyaml
+wandb
+jupyter
+ipykernel
+pytest

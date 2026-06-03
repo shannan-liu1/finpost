@@ -1,0 +1,13 @@
+{
+  "run_name": "gkd_selected",
+  "start_time": "2026-06-01T21:19:32",
+  "end_time": "2026-06-01T21:26:33",
+  "elapsed_sec": 421.1071266978979,
+  "generation_seconds": 316.04407471604645,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 668160,
+  "generated_tokens_decoded": 363318,
+  "tokens_per_second": 2114.135506575519,
+  "estimated_cost_usd": null
+}

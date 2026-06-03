@@ -1,0 +1,44 @@
+# FinChain public DPO continuation config.
+# Used by the repo-native DPO canary/training path; the public notebook's full
+# TRL launch passes the same policy/reference and 300-step budget via CLI.
+# This run uses the validation-selected SFT checkpoint for both policy and
+# reference. The preference-pair JSONL/manifest records its own sampled source
+# checkpoint; the trainer does not require that source to be hard-coded here.
+model:
+  policy_checkpoint: results/checkpoints/qwen25-1p5b-finchain-v2-trl-sft-2gpu/selected
+  reference_checkpoint: results/checkpoints/qwen25-1p5b-finchain-v2-trl-sft-2gpu/selected
+  dtype: bfloat16
+  use_safetensors: true
+  gradient_checkpointing: false
+  use_8bit_optimizer: false
+  attn_implementation: null
+data:
+  pairs_path: results/finchain_pairs/v2_template_disjoint/merged/pairs.jsonl
+  manifest_path: results/finchain_pairs/v2_template_disjoint/merged/manifest.json
+  tokenized_cache_path: results/finchain_pairs/v2_template_disjoint/merged/pairs.tokenized.pt
+  rebuild_tokenized_cache: false
+  precompute_reference_logps: true
+  reference_logps_cache_path: results/finchain_pairs/v2_template_disjoint/merged/pairs.reference-logps.pt
+  seed: 42
+dpo:
+  beta: 0.1
+training:
+  max_steps: 300
+  warmup_steps: 30
+  lr: 5.0e-6
+  weight_decay: 0.01
+  grad_accum_steps: 8
+  grad_clip: 1.0
+  checkpoint_every_n_steps: 100
+  per_device_pair_batch_size: 1
+  dataloader_num_workers: 2
+  pin_memory: true
+packing:
+  max_seq_len: 1536
+logging:
+  wandb_project: finpost-finchain-dpo
+  run_name: qwen25-1p5b-finchain-v2-template-disjoint-dpo
+checkpointing:
+  save_dir: results/checkpoints/qwen25-1p5b-finchain-v2-dpo
+  retention_last_n: 4
+  resume_from: null

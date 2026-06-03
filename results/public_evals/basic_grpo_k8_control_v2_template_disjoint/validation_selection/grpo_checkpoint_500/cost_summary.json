@@ -1,0 +1,13 @@
+{
+  "run_name": "basic_k8_grpo_checkpoint_500",
+  "start_time": "2026-05-31T23:54:46",
+  "end_time": "2026-06-01T00:00:05",
+  "elapsed_sec": 319.35445653647184,
+  "generation_seconds": 288.3529739137739,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 649616,
+  "generated_tokens_decoded": 294248,
+  "tokens_per_second": 2252.8500094271767,
+  "estimated_cost_usd": null
+}

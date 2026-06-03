@@ -1,0 +1,13 @@
+{
+  "run_name": "teacher",
+  "start_time": "2026-06-01T00:50:23",
+  "end_time": "2026-06-01T01:04:55",
+  "elapsed_sec": 871.389900509268,
+  "generation_seconds": 684.3131189402193,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 668160,
+  "generated_tokens_decoded": 414702,
+  "tokens_per_second": 976.3951347809387,
+  "estimated_cost_usd": null
+}

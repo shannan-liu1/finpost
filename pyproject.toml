@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finpost"
+version = "0.0.1"
+description = "Post-training research harness for FinChain financial reasoning."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "accelerate",
+    "datasets",
+    "huggingface_hub",
+    "numpy",
+    "pandas",
+    "peft",
+    "pydantic",
+    "pyyaml",
+    "safetensors",
+    "scikit-learn",
+    "scipy",
+    "torch",
+    "tqdm",
+    "transformers",
+    "trl",
+    "wandb",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ipykernel",
+    "jupyter",
+    "pytest",
+    "ruff",
+]
+rlvr = [
+    "accelerate",
+    "peft",
+    "trl",
+]
+chaineval = [
+    "bert-score",
+    "rouge-score",
+    "sentence-transformers",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.ipynb" = ["E402", "F811"]

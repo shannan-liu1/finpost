@@ -1,0 +1,12 @@
+[
+  {
+    "checkpoint": "basic_k8_grpo_checkpoint_400",
+    "source": "finchain",
+    "n": 870,
+    "accuracy": 0.16666666666666666,
+    "parse_success_rate": 1.0,
+    "generated_tokens": 650038,
+    "generated_tokens_decoded": 293435,
+    "elapsed_sec": 290.771
+  }
+]

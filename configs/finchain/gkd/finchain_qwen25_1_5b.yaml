@@ -1,0 +1,63 @@
+# GKD full-run config - Qwen2.5-1.5B student, Qwen2.5-7B-Instruct teacher.
+#
+# Defaults track Agarwal et al. 2023 Table A.2 (arithmetic-reasoning experiment) where
+# possible, scaled down for our hardware and shorter run:
+#
+#   Paper arithmetic-reasoning setup (FLAN-T5-XL teacher, FLAN-T5-Base student):
+#     steps=40000, batch=32, lr=3e-4, max_completion_length=320,
+#     student_temperature=1.0, divergence=forward KL.
+#
+#   This config (Qwen2.5-7B teacher, Qwen2.5-1.5B student, A40 GPU):
+#     steps=500, effective batch=8 (1 prompt * 4 rollouts * grad_accum=2),
+#     lr=3e-6 (smaller model already SFT'd, lower lr stable),
+#     max_completion_length=512 for FinChain rollouts, same
+#     student_temperature, beta=0 forward KL.
+#
+# Memory budget on A40 48GB (bf16, 8-bit AdamW defaults off; flip
+# use_8bit_optimizer to true if the runtime is memory tight):
+#   student 3 GB + grads 3 GB + AdamW state 12 GB
+#   teacher 15 GB (frozen, eval, no_grad)
+#   activations + KV during gen ~5 GB (grad ckpt on student)
+#   logits buffers are still full-sequence model outputs, but JSD log-softmax
+#   work is chunked over sequence positions to avoid an extra full
+#   (B*K, seq, vocab) float32 allocation.
+#   = A40-targeted, but keep the canary as the real hardware gate.
+model:
+  student_checkpoint: results/checkpoints/qwen25-1p5b-finchain-v2-trl-sft-2gpu/selected
+  teacher_checkpoint: Qwen/Qwen2.5-7B-Instruct
+  student_dtype: bfloat16
+  teacher_dtype: bfloat16
+  use_safetensors: true
+  gradient_checkpointing: true
+  use_8bit_optimizer: false
+  attn_implementation: null
+data:
+  source: finchain
+  split: train
+  max_prompt_len: 512
+  require_full_prompt_coverage: true
+  seed: 42
+gkd:
+  beta: 0.0  # forward KL, paper default for math reasoning
+  sequence_chunk_size: 64
+training:
+  max_steps: 500
+  warmup_steps: 50
+  lr: 3.0e-6
+  weight_decay: 0.01
+  grad_accum_steps: 2
+  grad_clip: 1.0
+  checkpoint_every_n_steps: 250
+  per_device_prompt_batch_size: 1
+  rollouts_per_prompt: 4
+  max_completion_length: 512
+  student_temperature: 1.0
+  dataloader_num_workers: 2
+  pin_memory: true
+logging:
+  wandb_project: finpost-finchain-gkd
+  run_name: qwen25-1p5b-finchain-v2-template-disjoint-gkd
+checkpointing:
+  save_dir: results/checkpoints/qwen25-1p5b-finchain-v2-gkd
+  retention_last_n: 3
+  resume_from: null

@@ -1,0 +1,2 @@
+checkpoint,source,n,accuracy,parse_success_rate,generated_tokens,generated_tokens_decoded,elapsed_sec
+basic_k8_grpo_checkpoint_500,finchain,870,0.16666666666666666,0.9988505747126437,649616,294248,288.697

@@ -1,0 +1,13 @@
+{
+  "run_name": "sft",
+  "start_time": "2026-06-01T00:01:20",
+  "end_time": "2026-06-01T00:08:06",
+  "elapsed_sec": 406.37800684198737,
+  "generation_seconds": 298.693027228117,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 642524,
+  "generated_tokens_decoded": 277615,
+  "tokens_per_second": 2151.1181762850238,
+  "estimated_cost_usd": null
+}

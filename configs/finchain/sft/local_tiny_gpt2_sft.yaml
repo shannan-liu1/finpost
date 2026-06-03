@@ -1,0 +1,31 @@
+model:
+  base_model_id: sshleifer/tiny-gpt2
+  dtype: float32
+  use_safetensors: false
+data:
+  sources:
+    - finchain
+  val_split_pct: 20.0
+  seed: 42
+training:
+  max_steps: 20
+  warmup_steps: 1
+  lr: 1.0e-4
+  weight_decay: 0.01
+  grad_accum_steps: 1
+  grad_clip: 1.0
+  val_every_n_steps: 5
+  checkpoint_every_n_steps: 10
+  per_device_batch_size: 2
+  dataloader_num_workers: 0
+  pin_memory: false
+packing:
+  max_seq_len: 256
+  isolate_documents: true
+logging:
+  wandb_project: finpost-finchain-local
+  run_name: finchain-tiny-gpt2-sft-canary
+checkpointing:
+  save_dir: results/checkpoints/finchain-tiny-gpt2-sft-canary
+  retention_last_n: 2
+  resume_from: null

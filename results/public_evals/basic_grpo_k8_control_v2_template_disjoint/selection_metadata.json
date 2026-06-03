@@ -1,0 +1,12 @@
+{
+  "final_eval_split": "test",
+  "candidate_eval_hf_repo": "shannan-liu1/qwen25-1p5b-finchain-v2-basic-grpo-k8-control-candidates",
+  "local_checkpoint_path": "results/checkpoints/qwen25-1p5b-finchain-v2-basic-grpo-k8-control/selected",
+  "selected_checkpoint": "results/checkpoints/qwen25-1p5b-finchain-v2-basic-grpo-k8-control/selected",
+  "selected_hf_repo": "shannan-liu1/qwen25-1p5b-finchain-v2-basic-grpo-k8-control-selected",
+  "selected_label": "basic_k8_grpo_checkpoint_400",
+  "selection_metric": "accuracy",
+  "selection_split": "validation",
+  "test_touched_before_selection": false,
+  "tie_breaker": "parse_success_rate_then_earliest_step"
+}

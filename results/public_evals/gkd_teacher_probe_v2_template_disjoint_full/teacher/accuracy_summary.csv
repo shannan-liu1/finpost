@@ -1,0 +1,2 @@
+checkpoint,source,n,accuracy,parse_success_rate,generated_tokens,generated_tokens_decoded,elapsed_sec
+teacher,finchain,870,0.2367816091954023,1.0,668160,414702,684.715

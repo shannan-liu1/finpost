@@ -1,0 +1,12 @@
+[
+  {
+    "checkpoint": "dpo_checkpoint_250",
+    "source": "finchain",
+    "n": 870,
+    "accuracy": 0.021839080459770115,
+    "parse_success_rate": 0.9816091954022989,
+    "generated_tokens": 594958,
+    "generated_tokens_decoded": 269349,
+    "elapsed_sec": 474.132
+  }
+]

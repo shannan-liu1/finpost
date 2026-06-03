@@ -1,0 +1,30 @@
+[
+  {
+    "checkpoint": "sft_baseline",
+    "source": "finchain",
+    "n": 870,
+    "accuracy": 0.1896551724137931,
+    "parse_success_rate": 1.0,
+    "generated_tokens": 662364,
+    "generated_tokens_decoded": 278818,
+    "elapsed_sec": 315.759,
+    "step_recall": 0.6116858237547891,
+    "step_precision": 0.46504575408068993,
+    "step_f1": 0.49449360940646986,
+    "chaineval_final_match": 0.42528735632183906,
+    "rouge2": 0.16345166546297102,
+    "rougeL": 0.2755236417865136,
+    "rougeLsum": 0.3358682436294102,
+    "bertscore": 0.8566281542695802,
+    "dtw_precision_bonus": 0.57438705090796,
+    "dtw_recall_bonus": 0.7881417620691952,
+    "dtw_f1_bonus": 0.6063176969505041,
+    "dtw_avg_path_score_bonus": 0.6961883037028777,
+    "dtw_norm_score_bonus": 0.7391830045093916,
+    "dtw_precision_gate": 0.35941238688781535,
+    "dtw_recall_gate": 0.5290421453110545,
+    "dtw_f1_gate": 0.38116874449777677,
+    "dtw_avg_path_score_gate": 0.5813903919632257,
+    "dtw_norm_score_gate": 0.7475431327881037
+  }
+]

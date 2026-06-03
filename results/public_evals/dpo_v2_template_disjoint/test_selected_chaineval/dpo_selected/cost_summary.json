@@ -1,0 +1,13 @@
+{
+  "run_name": "dpo_selected",
+  "start_time": "2026-05-28T02:36:23",
+  "end_time": "2026-05-28T02:45:51",
+  "elapsed_sec": 567.9053203631192,
+  "generation_seconds": 497.91462015360594,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 625917,
+  "generated_tokens_decoded": 265911,
+  "tokens_per_second": 1257.076965940276,
+  "estimated_cost_usd": null
+}

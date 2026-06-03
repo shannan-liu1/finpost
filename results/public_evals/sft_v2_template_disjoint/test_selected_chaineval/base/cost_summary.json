@@ -1,0 +1,13 @@
+{
+  "run_name": "base",
+  "start_time": "2026-05-27T01:41:24",
+  "end_time": "2026-05-27T01:54:47",
+  "elapsed_sec": 802.473530318588,
+  "generation_seconds": 706.9890385679901,
+  "gpu_type": "NVIDIA A40",
+  "dtype": "torch.bfloat16",
+  "generated_tokens": 668160,
+  "generated_tokens_decoded": 389601,
+  "tokens_per_second": 945.0783018550917,
+  "estimated_cost_usd": null
+}
